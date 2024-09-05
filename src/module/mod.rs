@@ -5,12 +5,21 @@ pub mod wasmops;
 
 use anyhow::Result;
 use components::{FuncDecl, ImportSet};
-use wasmparser::{Chunk, FuncType, Parser, Payload::*};
+use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Parser, Payload::*, Table};
 
 pub struct WasmModule<'a> {
     sigs: Vec<FuncType>,
     imports: ImportSet<'a>,
-    funcs: Vec<FuncDecl>,
+    funcs: Vec<FuncDecl<'a>>,
+    tables: Vec<Table<'a>>,
+    mems: Vec<MemoryType>,
+    globals: Vec<Global<'a>>,
+    exports: Vec<Export<'a>>,
+    elems: Vec<Element<'a>>,
+    datas: Vec<Data<'a>>,
+
+    start_func_id: Option<u32>,
+    data_count: Option<u32>,
 }
 
 impl Default for WasmModule<'_> {
@@ -19,6 +28,14 @@ impl Default for WasmModule<'_> {
             sigs: vec![],
             imports: ImportSet::default(),
             funcs: vec![],
+            tables: vec![],
+            mems: vec![],
+            datas: vec![],
+            globals: vec![],
+            exports: vec![],
+            elems: vec![],
+            start_func_id: None,
+            data_count: None,
         }
     }
 }
@@ -36,43 +53,72 @@ impl<'a> WasmModule<'a> {
 
         let mut module = WasmModule::new();
 
+        let mut tot_func: u32 = 0;
+        let mut n_func: u32 = 0;
+
         for payload in payloads {
             match payload? {
                 // Sections for WebAssembly modules
                 Version { .. } => { /* ... */ }
                 TypeSection(tsread) => {
-                    module = module.sigs(Self::parse_type_section(tsread)?);
+                    module.sigs = Self::parse_type_section(tsread)?;
                 }
                 ImportSection(iread) => {
-                    module = module.imports(Self::parse_import_section(iread)?);
+                    module.imports = Self::parse_import_section(iread)?;
                 }
                 FunctionSection(fread) => {
-                    let funcs = module.parse_function_section(fread)?;
-                    module = module.funcs(funcs);
+                    let funcs = Self::parse_function_section(
+                        fread,
+                        module.get_num_imports() as u32,
+                        module.sigs.clone(),
+                    )?;
+                    module.funcs = funcs;
                 }
-                TableSection(tbread) => { /* ... */ }
-                MemorySection(memread) => { /* ... */ }
-                GlobalSection(gread) => { /* ... */ }
-                ExportSection(eread) => { /* ... */ }
-                StartSection { func, range } => { /* ... */ }
-                ElementSection(eread) => { /* ... */ }
-                DataCountSection { count, range } => { /* ... */ }
-                DataSection(dread) => { /* ... */ }
-
-                // Here we know how many functions we'll be receiving as
-                // `CodeSectionEntry`, so we can prepare for that, and
-                // afterwards we can parse and handle each function
-                // individually.
-                CodeSectionStart { count, range, size } => { /* ... */ }
+                TableSection(tread) => {
+                    module.tables = Self::parse_table_section(tread)?;
+                }
+                MemorySection(memread) => {
+                    module.mems = Self::parse_memory_section(memread)?;
+                }
+                GlobalSection(gread) => {
+                    module.globals = Self::parse_global_section(gread)?;
+                }
+                ExportSection(eread) => {
+                    module.exports = Self::parse_export_section(eread)?;
+                }
+                StartSection { func, .. } => module.start_func_id = Some(func),
+                ElementSection(eread) => {
+                    module.elems = Self::parse_element_section(eread)?;
+                }
+                DataCountSection { count, .. } => {
+                    module.data_count = Some(count);
+                }
+                DataSection(dread) => {
+                    module.datas = module.parse_data_section(dread)?;
+                }
+                CodeSectionStart { count, .. } => {
+                    tot_func = count;
+                }
                 CodeSectionEntry(body) => {
-                    // here we can iterate over `body` to parse the function
-                    // and its locals
+                    let func_ref = module.funcs.get_mut(n_func as usize).unwrap();
+
+                    let (locals, operators) = Self::parse_code_section(body)?;
+
+                    let _ = locals.into_iter().map(|l| func_ref.add_pure_local(l));
+                    let _ = operators.into_iter().map(|op| func_ref.add_operator(op));
+
+                    n_func += 1;
                 }
 
+                // TODO: Implement custom section
                 CustomSection(cread) => { /* ... */ }
 
+                // === The following are not yet implemented ===
+
                 // most likely you'd return an error here
-                UnknownSection { .. } => { /* ... */ }
+                UnknownSection { .. } => {
+                    panic!("Section id unknown");
+                }
 
                 // Sections for WebAssembly components
                 TagSection(_) => { /* ... */ }
@@ -94,26 +140,20 @@ impl<'a> WasmModule<'a> {
                 End(_) => {}
             }
         }
+
+        if n_func != tot_func {
+            anyhow::bail!("Function section size mismatch");
+        }
+
         Ok(module)
-    }
-
-    pub fn sigs(mut self, sigs: Vec<FuncType>) -> Self {
-        self.sigs = sigs;
-        self
-    }
-
-    pub fn imports(mut self, imports: ImportSet<'a>) -> Self {
-        self.imports = imports;
-        self
-    }
-
-    pub fn funcs(mut self, func_decls: Vec<FuncDecl>) -> Self {
-        self.funcs = func_decls;
-        self
     }
 
     pub fn get_sig(&self, index: u32) -> Option<&FuncType> {
         self.sigs.get(index as usize)
+    }
+
+    pub fn get_table(&self, index: u32) -> Option<&Table<'a>> {
+        self.tables.get(index as usize)
     }
 
     pub fn get_imports(&self) -> &ImportSet<'a> {
@@ -122,5 +162,9 @@ impl<'a> WasmModule<'a> {
 
     pub fn get_num_imports(&self) -> usize {
         self.imports.get_num_imports()
+    }
+
+    pub fn get_func(&self, index: u32) -> Option<&FuncDecl> {
+        self.funcs.get(index as usize)
     }
 }

@@ -1,4 +1,4 @@
-use wasmparser::{FuncType, Import, ValType};
+use wasmparser::{FuncType, Import, Operator, ValType};
 
 #[derive(Default)]
 pub struct ImportSet<'a> {
@@ -15,18 +15,19 @@ impl<'a> ImportSet<'a> {
     }
 }
 
-pub struct FuncDecl {
+#[derive(Clone)]
+pub struct FuncDecl<'a> {
     sig: FuncType,
-    pure_locals: Vec<ValType>,
-    bytecode: Vec<u8>,
+    pure_locals: Vec<(u32, ValType)>,
+    operators: Vec<Operator<'a>>,
 }
 
-impl FuncDecl {
+impl<'a> FuncDecl<'a> {
     pub fn new(sig: FuncType) -> Self {
         Self {
             sig,
             pure_locals: vec![],
-            bytecode: vec![],
+            operators: vec![],
         }
     }
 
@@ -34,19 +35,19 @@ impl FuncDecl {
         &self.sig
     }
 
-    pub fn get_pure_locals(&self) -> &[ValType] {
+    pub fn get_pure_locals(&self) -> &[(u32, ValType)] {
         &self.pure_locals
     }
 
-    pub fn get_bytecode(&self) -> &[u8] {
-        &self.bytecode
+    pub fn get_operators(&self) -> &[Operator] {
+        &self.operators
     }
 
-    pub fn set_bytecode(&mut self, bytecode: Vec<u8>) {
-        self.bytecode = bytecode;
+    pub fn add_operator(&mut self, op: Operator<'a>) {
+        self.operators.push(op);
     }
 
-    pub fn add_pure_local(&mut self, local: ValType) {
+    pub fn add_pure_local(&mut self, local: (u32, ValType)) {
         self.pure_locals.push(local);
     }
 }
