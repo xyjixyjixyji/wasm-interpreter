@@ -1,63 +1,36 @@
-use super::WasmModule;
-
 use anyhow::Result;
-use wasmparser::{Chunk, Parser, Payload::*};
+use wasmparser::{FuncType, Import};
 
-pub fn parse_bytecode(bytes: Vec<u8>) -> Result<WasmModule> {
-    let parser = Parser::new(0);
-    let payloads = parser.parse_all(&bytes);
+pub(crate) fn parse_type_section(tsread: wasmparser::TypeSectionReader) -> Result<Vec<FuncType>> {
+    let mut sigs = vec![];
 
-    for payload in payloads {
-        match payload? {
-            // Sections for WebAssembly modules
-            Version { .. } => { /* ... */ }
-            TypeSection(_) => { /* ... */ }
-            ImportSection(_) => { /* ... */ }
-            FunctionSection(_) => { /* ... */ }
-            TableSection(_) => { /* ... */ }
-            MemorySection(_) => { /* ... */ }
-            TagSection(_) => { /* ... */ }
-            GlobalSection(_) => { /* ... */ }
-            ExportSection(_) => { /* ... */ }
-            StartSection { .. } => { /* ... */ }
-            ElementSection(_) => { /* ... */ }
-            DataCountSection { .. } => { /* ... */ }
-            DataSection(_) => { /* ... */ }
-
-            // Here we know how many functions we'll be receiving as
-            // `CodeSectionEntry`, so we can prepare for that, and
-            // afterwards we can parse and handle each function
-            // individually.
-            CodeSectionStart { .. } => { /* ... */ }
-            CodeSectionEntry(body) => {
-                // here we can iterate over `body` to parse the function
-                // and its locals
+    for recgroup in tsread {
+        let recgroup = recgroup?;
+        if recgroup.is_explicit_rec_group() {
+            todo!("explicit rec groups not supported");
+        } else {
+            let ty = recgroup.into_types().next().unwrap();
+            match ty.composite_type.inner {
+                wasmparser::CompositeInnerType::Func(func_type) => {
+                    sigs.push(func_type);
+                }
+                wasmparser::CompositeInnerType::Array(_)
+                | wasmparser::CompositeInnerType::Struct(_) => {
+                    todo!("Array and struct are not yet implemented")
+                }
             }
-
-            // Sections for WebAssembly components
-            ModuleSection { .. } => { /* ... */ }
-            InstanceSection(_) => { /* ... */ }
-            CoreTypeSection(_) => { /* ... */ }
-            ComponentSection { .. } => { /* ... */ }
-            ComponentInstanceSection(_) => { /* ... */ }
-            ComponentAliasSection(_) => { /* ... */ }
-            ComponentTypeSection(_) => { /* ... */ }
-            ComponentCanonicalSection(_) => { /* ... */ }
-            ComponentStartSection { .. } => { /* ... */ }
-            ComponentImportSection(_) => { /* ... */ }
-            ComponentExportSection(_) => { /* ... */ }
-
-            CustomSection(_) => { /* ... */ }
-
-            // most likely you'd return an error here
-            UnknownSection { id, .. } => { /* ... */ }
-
-            // Once we've reached the end of a parser we either resume
-            // at the parent parser or the payload iterator is at its
-            // end and we're done.
-            End(_) => {}
         }
     }
 
-    Ok(WasmModule {})
+    Ok(sigs)
+}
+
+pub(crate) fn parse_import_section(iread: wasmparser::ImportSectionReader) -> Result<Vec<Import>> {
+    let mut imports = vec![];
+
+    for import in iread {
+        imports.push(import?);
+    }
+
+    Ok(imports)
 }

@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+leb128 = "0.2.5"
 wasmparser = "0.216.0"
