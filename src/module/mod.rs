@@ -1,30 +1,26 @@
+pub mod components;
 pub mod parse;
 pub mod wasmdefs;
 pub mod wasmops;
 
 use anyhow::Result;
-use wasmparser::{Chunk, FuncType, Import, Parser, Payload::*};
+use components::{FuncDecl, ImportSet};
+use wasmparser::{Chunk, FuncType, Parser, Payload::*};
 
-#[derive(Default)]
-pub struct ImportSet<'a> {
-    imports: Vec<Import<'a>>,
-    num_funcs: u32,
-    num_tables: u32,
-    num_mems: u32,
-    num_globals: u32,
-}
-
-impl<'a> ImportSet<'a> {
-    pub fn get_num_imports(&self) -> usize {
-        self.imports.len()
-    }
-}
-
-#[derive(Default)]
 pub struct WasmModule<'a> {
     sigs: Vec<FuncType>,
     imports: ImportSet<'a>,
-    funcs: Vec<FuncType>,
+    funcs: Vec<FuncDecl>,
+}
+
+impl Default for WasmModule<'_> {
+    fn default() -> Self {
+        WasmModule {
+            sigs: vec![],
+            imports: ImportSet::default(),
+            funcs: vec![],
+        }
+    }
 }
 
 impl<'a> WasmModule<'a> {
@@ -111,8 +107,8 @@ impl<'a> WasmModule<'a> {
         self
     }
 
-    pub fn funcs(mut self, funcs: Vec<FuncType>) -> Self {
-        self.funcs = funcs;
+    pub fn funcs(mut self, func_decls: Vec<FuncDecl>) -> Self {
+        self.funcs = func_decls;
         self
     }
 

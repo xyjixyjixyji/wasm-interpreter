@@ -1,7 +1,7 @@
 use anyhow::Result;
 use wasmparser::{FuncType, Import};
 
-use super::{ImportSet, WasmModule};
+use super::{components::FuncDecl, ImportSet, WasmModule};
 
 impl<'a> WasmModule<'a> {
     pub(crate) fn parse_type_section(
@@ -59,8 +59,8 @@ impl<'a> WasmModule<'a> {
     pub(crate) fn parse_function_section(
         &self,
         fread: wasmparser::FunctionSectionReader,
-    ) -> Result<Vec<FuncType>> {
-        let mut funcs = vec![];
+    ) -> Result<Vec<FuncDecl>> {
+        let mut func_decls = vec![];
 
         if fread.count() != self.get_num_imports() as u32 {
             anyhow::bail!(
@@ -71,9 +71,9 @@ impl<'a> WasmModule<'a> {
         for ind in fread {
             let ind = ind?;
             let ty = self.sigs[ind as usize].clone();
-            funcs.push(ty);
+            func_decls.push(FuncDecl::new(ty));
         }
 
-        Ok(funcs)
+        Ok(func_decls)
     }
 }
