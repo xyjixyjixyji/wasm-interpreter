@@ -2,15 +2,29 @@ pub mod parse;
 pub mod wasmdefs;
 pub mod wasmops;
 
-use self::parse::*;
-
 use anyhow::Result;
 use wasmparser::{Chunk, FuncType, Import, Parser, Payload::*};
 
 #[derive(Default)]
+pub struct ImportSet<'a> {
+    imports: Vec<Import<'a>>,
+    num_funcs: u32,
+    num_tables: u32,
+    num_mems: u32,
+    num_globals: u32,
+}
+
+impl<'a> ImportSet<'a> {
+    pub fn get_num_imports(&self) -> usize {
+        self.imports.len()
+    }
+}
+
+#[derive(Default)]
 pub struct WasmModule<'a> {
     sigs: Vec<FuncType>,
-    imports: Vec<Import<'a>>,
+    imports: ImportSet<'a>,
+    funcs: Vec<FuncType>,
 }
 
 impl<'a> WasmModule<'a> {
@@ -31,12 +45,15 @@ impl<'a> WasmModule<'a> {
                 // Sections for WebAssembly modules
                 Version { .. } => { /* ... */ }
                 TypeSection(tsread) => {
-                    module = module.sigs(parse_type_section(tsread)?);
+                    module = module.sigs(Self::parse_type_section(tsread)?);
                 }
                 ImportSection(iread) => {
-                    module = module.imports(parse_import_section(iread)?);
+                    module = module.imports(Self::parse_import_section(iread)?);
                 }
-                FunctionSection(fread) => { /* ... */ }
+                FunctionSection(fread) => {
+                    let funcs = module.parse_function_section(fread)?;
+                    module = module.funcs(funcs);
+                }
                 TableSection(tbread) => { /* ... */ }
                 MemorySection(memread) => { /* ... */ }
                 GlobalSection(gread) => { /* ... */ }
@@ -89,8 +106,25 @@ impl<'a> WasmModule<'a> {
         self
     }
 
-    pub fn imports(mut self, imports: Vec<Import<'a>>) -> Self {
+    pub fn imports(mut self, imports: ImportSet<'a>) -> Self {
         self.imports = imports;
         self
+    }
+
+    pub fn funcs(mut self, funcs: Vec<FuncType>) -> Self {
+        self.funcs = funcs;
+        self
+    }
+
+    pub fn get_sig(&self, index: u32) -> Option<&FuncType> {
+        self.sigs.get(index as usize)
+    }
+
+    pub fn get_imports(&self) -> &ImportSet<'a> {
+        &self.imports
+    }
+
+    pub fn get_num_imports(&self) -> usize {
+        self.imports.get_num_imports()
     }
 }

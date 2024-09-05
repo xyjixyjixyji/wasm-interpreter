@@ -1,5 +1,7 @@
 use std::env;
 
+use module::WasmModule;
+
 mod module;
 
 #[derive(Debug)]
@@ -38,6 +40,7 @@ fn main() {
     let args = parse_args();
 
     let wasm_bytes: Vec<u8> = std::fs::read(&args.infile).unwrap();
+    let module = WasmModule::from_bytecode(&wasm_bytes).unwrap();
 
     println!("{:?}", args);
 }
