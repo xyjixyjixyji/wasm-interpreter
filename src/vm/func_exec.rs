@@ -38,7 +38,7 @@ pub(crate) struct WasmFunctionExecutorImpl<'a> {
 impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
     fn execute(&mut self) -> Result<WasmValue> {
         let mut done_exec = false;
-        while done_exec {
+        while !done_exec && self.pc.0 < self.func.get_insts().len() {
             let inst = self.func.get_inst(self.pc.0);
             match inst {
                 Instructions::Return => {
