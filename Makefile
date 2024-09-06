@@ -3,6 +3,7 @@
 build:
 	cargo check
 	cargo b
+	cp target/debug/wasm-interpreter-rs ./wasm_vm
 
 build-tests:
 	make -C tests

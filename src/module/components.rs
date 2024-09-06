@@ -1,4 +1,5 @@
-use wasmparser::{FuncType, Import, Operator, ValType};
+use super::insts::Instructions;
+use wasmparser::{FuncType, Import, ValType};
 
 #[derive(Default)]
 pub struct ImportSet<'a> {
@@ -15,19 +16,19 @@ impl<'a> ImportSet<'a> {
     }
 }
 
-#[derive(Clone)]
-pub struct FuncDecl<'a> {
+#[derive(Debug, Clone)]
+pub struct FuncDecl {
     sig: FuncType,
     pure_locals: Vec<(u32, ValType)>,
-    operators: Vec<Operator<'a>>,
+    insts: Vec<Instructions>,
 }
 
-impl<'a> FuncDecl<'a> {
+impl FuncDecl {
     pub fn new(sig: FuncType) -> Self {
         Self {
             sig,
             pure_locals: vec![],
-            operators: vec![],
+            insts: vec![],
         }
     }
 
@@ -37,14 +38,6 @@ impl<'a> FuncDecl<'a> {
 
     pub fn get_pure_locals(&self) -> &[(u32, ValType)] {
         &self.pure_locals
-    }
-
-    pub fn get_operators(&self) -> &[Operator] {
-        &self.operators
-    }
-
-    pub fn add_operator(&mut self, op: Operator<'a>) {
-        self.operators.push(op);
     }
 
     pub fn add_pure_local(&mut self, local: (u32, ValType)) {

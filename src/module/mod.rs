@@ -1,4 +1,5 @@
 pub mod components;
+pub mod insts;
 pub mod parse;
 pub mod wasmdefs;
 pub mod wasmops;
@@ -10,7 +11,7 @@ use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Parser, Pa
 pub struct WasmModule<'a> {
     sigs: Vec<FuncType>,
     imports: ImportSet<'a>,
-    funcs: Vec<FuncDecl<'a>>,
+    funcs: Vec<FuncDecl>,
     tables: Vec<Table<'a>>,
     mems: Vec<MemoryType>,
     globals: Vec<Global<'a>>,
@@ -69,7 +70,7 @@ impl<'a> WasmModule<'a> {
                 FunctionSection(fread) => {
                     let funcs = Self::parse_function_section(
                         fread,
-                        module.get_num_imports() as u32,
+                        module.get_imports().num_funcs,
                         module.sigs.clone(),
                     )?;
                     module.funcs = funcs;
@@ -102,10 +103,9 @@ impl<'a> WasmModule<'a> {
                 CodeSectionEntry(body) => {
                     let func_ref = module.funcs.get_mut(n_func as usize).unwrap();
 
-                    let (locals, operators) = Self::parse_code_section(body)?;
+                    let (locals, code_bytes) = Self::parse_code_section(body)?;
 
                     let _ = locals.into_iter().map(|l| func_ref.add_pure_local(l));
-                    let _ = operators.into_iter().map(|op| func_ref.add_operator(op));
 
                     n_func += 1;
                 }

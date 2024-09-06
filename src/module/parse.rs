@@ -1,7 +1,7 @@
 use anyhow::Result;
 use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Operator, Table, ValType};
 
-use super::{components::FuncDecl, ImportSet, WasmModule};
+use super::{components::FuncDecl, insts::Instructions, ImportSet, WasmModule};
 
 impl<'a> WasmModule<'a> {
     pub(crate) fn parse_type_section(
@@ -41,7 +41,9 @@ impl<'a> WasmModule<'a> {
             num_globals: 0,
         };
 
+        println!("Import");
         for import in iread {
+            println!("Import");
             let import = import?;
             match import.ty {
                 wasmparser::TypeRef::Func(_) => import_set.num_funcs += 1,
@@ -58,14 +60,16 @@ impl<'a> WasmModule<'a> {
 
     pub(crate) fn parse_function_section(
         fread: wasmparser::FunctionSectionReader,
-        num_imports: u32,
+        num_import_funcs: u32,
         sigs: Vec<FuncType>,
-    ) -> Result<Vec<FuncDecl<'a>>> {
+    ) -> Result<Vec<FuncDecl>> {
         let mut func_decls = vec![];
 
-        if fread.count() != num_imports as u32 {
+        if fread.count() != num_import_funcs as u32 {
             anyhow::bail!(
-                "malformed func imports, function section size does not match import section size"
+                "malformed func imports, function section size does not match import section size, {}/{}",
+                fread.count(),
+                num_import_funcs
             );
         }
 
@@ -156,19 +160,27 @@ impl<'a> WasmModule<'a> {
 
     pub(crate) fn parse_code_section(
         func_body: wasmparser::FunctionBody<'a>,
-    ) -> Result<(Vec<(u32, ValType)>, Vec<Operator>)> {
+    ) -> Result<(Vec<(u32, ValType)>, Vec<Instructions>)> {
         let mut locals = vec![];
         let local_reader = func_body.get_locals_reader()?;
         for local in local_reader {
             locals.push(local?);
         }
 
-        let ops_reader = func_body.get_operators_reader()?;
-        let mut ops = vec![];
-        for op in ops_reader {
-            ops.push(op?);
+        let mut binary_reader = func_body.get_binary_reader();
+        // skip the locals
+        let count = binary_reader.read_var_u32()?;
+        for _ in 0..count {
+            binary_reader.read_var_u32()?;
+            binary_reader.read::<ValType>()?;
         }
+        // the remaining bytes are the operators
+        let code_bytes = binary_reader
+            .read_bytes(binary_reader.bytes_remaining() as usize)?
+            .to_vec();
 
-        Ok((locals, ops))
+        let insts = Instructions::from_code_bytes(code_bytes)?;
+
+        Ok((locals, insts))
     }
 }

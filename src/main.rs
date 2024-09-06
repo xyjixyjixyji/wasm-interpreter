@@ -41,6 +41,7 @@ fn main() {
 
     let wasm_bytes: Vec<u8> = std::fs::read(&args.infile).unwrap();
     let module = WasmModule::from_bytecode(&wasm_bytes).unwrap();
+    let func = module.get_func(0).unwrap();
 
-    println!("{:?}", args);
+    println!("{:?}", func);
 }
