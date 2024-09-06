@@ -5,6 +5,15 @@ pub enum WasmValue {
     F64(f64),
 }
 
+impl ToString for WasmValue {
+    fn to_string(&self) -> String {
+        match self {
+            WasmValue::I32(val) => val.to_string(),
+            WasmValue::F64(val) => format!("{:.6}", val),
+        }
+    }
+}
+
 impl WasmValue {
     pub fn as_i32(&self) -> i32 {
         match self {

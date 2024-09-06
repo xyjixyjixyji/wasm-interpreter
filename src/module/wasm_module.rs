@@ -148,4 +148,8 @@ impl<'a> WasmModule<'a> {
     pub fn get_memory(&self) -> Option<&MemoryType> {
         self.mems.first()
     }
+
+    pub fn get_exports(&self) -> &Vec<Export<'a>> {
+        &self.exports
+    }
 }

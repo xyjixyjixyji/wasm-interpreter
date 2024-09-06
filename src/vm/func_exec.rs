@@ -95,8 +95,14 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                     self.run_memory_grow(*mem)?;
                     self.inc_pc();
                 }
-                Instructions::I32Const { value } => todo!(),
-                Instructions::F64Const { value } => todo!(),
+                Instructions::I32Const { value } => {
+                    self.push_operand_stack(WasmValue::I32(*value));
+                    self.inc_pc();
+                }
+                Instructions::F64Const { value } => {
+                    self.push_operand_stack(WasmValue::F64(*value));
+                    self.inc_pc();
+                }
                 Instructions::I32Unop(_) => todo!(),
                 Instructions::I32BinOp(_) => todo!(),
                 Instructions::F64Unop(_) => todo!(),
@@ -175,7 +181,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     // TODO
     fn analyze_control_flow_table(
         func: &FuncDecl,
-        module: Rc<RefCell<WasmModule>>,
+        module: Rc<RefCell<WasmModule<'a>>>,
     ) -> ControlFlowTable {
         let jump_table = HashMap::new();
 

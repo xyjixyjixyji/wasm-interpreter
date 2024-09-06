@@ -1,23 +1,21 @@
 use std::env;
 
-use module::wasm_module::WasmModule;
+use module::{value_type::WasmValue, wasm_module::WasmModule};
 
-use log::debug;
 use vm::{WasmInterpreter, WasmVm};
 
 mod module;
 mod vm;
 
-#[derive(Debug)]
 struct WasmInterpreterArgs {
-    wasm_args: Vec<String>,
+    wasm_args: Vec<WasmValue>,
     infile: String,
 }
 
 fn parse_args() -> WasmInterpreterArgs {
     let args: Vec<String> = env::args().collect();
 
-    let mut wasm_args = vec![];
+    let mut wasm_args_str = vec![];
     let mut infile = String::new();
 
     let mut i = 1;
@@ -26,7 +24,7 @@ fn parse_args() -> WasmInterpreterArgs {
             "-a" => {
                 i += 1;
                 while i < args.len() - 1 {
-                    wasm_args.push(args[i].clone());
+                    wasm_args_str.push(args[i].clone());
                     i += 1;
                 }
             }
@@ -36,6 +34,18 @@ fn parse_args() -> WasmInterpreterArgs {
             }
         }
     }
+
+    let wasm_args = wasm_args_str
+        .iter()
+        .map(|arg| {
+            if arg.ends_with("d") {
+                let arg = &arg[..arg.len() - 1];
+                WasmValue::F64(arg.parse().unwrap())
+            } else {
+                WasmValue::I32(arg.parse().unwrap())
+            }
+        })
+        .collect();
 
     WasmInterpreterArgs { wasm_args, infile }
 }
@@ -54,7 +64,7 @@ fn main() {
         }
     };
     let vm = WasmInterpreter::from_module(module);
-    match vm.run() {
+    match vm.run(args.wasm_args) {
         Ok(r) => {
             print!("{}", r)
         }
