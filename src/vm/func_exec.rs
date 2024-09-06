@@ -8,7 +8,7 @@ use std::{
 
 use super::{interpreter::LinearMemory, WasmFunctionExecutor};
 use crate::module::{
-    components::FuncDecl, insts::Instructions, wasm_module::WasmModule, value_type::WasmValue,
+    components::FuncDecl, insts::Instructions, value_type::WasmValue, wasm_module::WasmModule,
 };
 
 struct Pc(usize);
@@ -25,6 +25,8 @@ pub(crate) struct WasmFunctionExecutorImpl<'a> {
     pc: Pc,
     /// The operand stack.
     operand_stack: VecDeque<WasmValue>,
+    /// local variables
+    locals: Vec<WasmValue>,
     /// The control flow table
     control_flow_table: ControlFlowTable,
     /// The reference to the linear memory for the Wasm VM instance.
@@ -111,13 +113,27 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         func: FuncDecl,
         module: Rc<RefCell<WasmModule<'a>>>,
         mem: Rc<RefCell<LinearMemory>>,
+        main_locals: Option<Vec<WasmValue>>,
     ) -> Self {
         let control_flow_table = Self::analyze_control_flow_table(&func, Rc::clone(&module));
+        let mut locals = if let Some(locals) = main_locals {
+            locals
+        } else {
+            vec![]
+        };
+
+        locals.extend(
+            func.get_pure_locals()
+                .iter()
+                .map(|(_, ty)| WasmValue::default_value(ty)),
+        );
+
         Self {
             func,
             pc: Pc(0),
             mem,
             module,
+            locals,
             control_flow_table,
             operand_stack: VecDeque::new(),
         }
@@ -146,8 +162,12 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     }
 
     pub fn call_func(&self, func: FuncDecl) -> WasmValue {
-        let mut executor =
-            WasmFunctionExecutorImpl::new(func, Rc::clone(&self.module), Rc::clone(&self.mem));
+        let mut executor = WasmFunctionExecutorImpl::new(
+            func,
+            Rc::clone(&self.module),
+            Rc::clone(&self.mem),
+            None,
+        );
 
         executor.execute().unwrap()
     }

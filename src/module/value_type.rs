@@ -1,3 +1,5 @@
+use wasmparser::ValType;
+
 pub enum WasmValue {
     I32(i32),
     F64(f64),
@@ -15,6 +17,14 @@ impl WasmValue {
         match self {
             WasmValue::F64(val) => *val,
             _ => panic!("WasmValue is not F64"),
+        }
+    }
+
+    pub fn default_value(value_type: &ValType) -> WasmValue {
+        match value_type {
+            ValType::I32 => WasmValue::I32(0),
+            ValType::F64 => WasmValue::F64(0.0),
+            _ => panic!("Unsupported value type"),
         }
     }
 }
