@@ -44,6 +44,10 @@ impl FuncDecl {
         &self.insts
     }
 
+    pub fn get_inst(&self, idx: usize) -> &Instructions {
+        &self.insts[idx]
+    }
+
     pub fn add_func_body(&mut self, func_body: FuncBody) {
         self.pure_locals = func_body.locals;
         self.insts = func_body.insts;

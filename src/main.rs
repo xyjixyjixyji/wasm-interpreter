@@ -1,6 +1,6 @@
 use std::env;
 
-use module::module::WasmModule;
+use module::wasm_module::WasmModule;
 
 use log::debug;
 use vm::{WasmInterpreter, WasmVm};

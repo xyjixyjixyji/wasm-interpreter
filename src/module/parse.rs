@@ -4,7 +4,7 @@ use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Table, Val
 use super::{
     components::{FuncDecl, ImportSet},
     insts::Instructions,
-    module::WasmModule,
+    wasm_module::WasmModule,
 };
 
 pub(crate) struct FuncBody {

@@ -144,4 +144,8 @@ impl<'a> WasmModule<'a> {
     pub fn get_data_count(&self) -> Option<u32> {
         self.data_count
     }
+
+    pub fn get_memory(&self) -> Option<&MemoryType> {
+        self.mems.first()
+    }
 }
