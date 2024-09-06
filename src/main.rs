@@ -3,6 +3,7 @@ use std::env;
 use module::module::WasmModule;
 
 use log::debug;
+use vm::{WasmInterpreter, WasmVm};
 
 mod module;
 mod vm;
@@ -52,4 +53,13 @@ fn main() {
             panic!("{:?}", e);
         }
     };
+    let vm = WasmInterpreter::from_module(module);
+    match vm.run() {
+        Ok(r) => {
+            print!("{}", r)
+        }
+        Err(_) => {
+            print!("!trap");
+        }
+    }
 }

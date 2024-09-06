@@ -1,7 +1,7 @@
 use super::{insts::Instructions, parse::FuncBody};
 use wasmparser::{FuncType, Import, ValType};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ImportSet<'a> {
     pub imports: Vec<Import<'a>>,
     pub num_funcs: u32,
