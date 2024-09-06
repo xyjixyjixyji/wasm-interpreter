@@ -1,4 +1,4 @@
-use super::insts::Instructions;
+use super::{insts::Instructions, parse::FuncBody};
 use wasmparser::{FuncType, Import, ValType};
 
 #[derive(Default)]
@@ -40,7 +40,12 @@ impl FuncDecl {
         &self.pure_locals
     }
 
-    pub fn add_pure_local(&mut self, local: (u32, ValType)) {
-        self.pure_locals.push(local);
+    pub fn get_insts(&self) -> &Vec<Instructions> {
+        &self.insts
+    }
+
+    pub fn add_func_body(&mut self, func_body: FuncBody) {
+        self.pure_locals = func_body.locals;
+        self.insts = func_body.insts;
     }
 }

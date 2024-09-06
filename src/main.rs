@@ -1,8 +1,11 @@
 use std::env;
 
-use module::WasmModule;
+use module::module::WasmModule;
+
+use log::debug;
 
 mod module;
+mod vm;
 
 #[derive(Debug)]
 struct WasmInterpreterArgs {
@@ -37,11 +40,16 @@ fn parse_args() -> WasmInterpreterArgs {
 }
 
 fn main() {
+    env_logger::init();
+
     let args = parse_args();
 
     let wasm_bytes: Vec<u8> = std::fs::read(&args.infile).unwrap();
-    let module = WasmModule::from_bytecode(&wasm_bytes).unwrap();
-    let func = module.get_func(0).unwrap();
-
-    println!("{:?}", func);
+    let module = WasmModule::from_bytecode(&wasm_bytes);
+    let module = match module {
+        Ok(module) => module,
+        Err(e) => {
+            panic!("{:?}", e);
+        }
+    };
 }

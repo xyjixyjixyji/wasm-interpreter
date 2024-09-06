@@ -1,7 +1,16 @@
 use anyhow::Result;
-use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Operator, Table, ValType};
+use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Table, ValType};
 
-use super::{components::FuncDecl, insts::Instructions, ImportSet, WasmModule};
+use super::{
+    components::{FuncDecl, ImportSet},
+    insts::Instructions,
+    module::WasmModule,
+};
+
+pub(crate) struct FuncBody {
+    pub(crate) locals: Vec<(u32, ValType)>,
+    pub(crate) insts: Vec<Instructions>,
+}
 
 impl<'a> WasmModule<'a> {
     pub(crate) fn parse_type_section(
@@ -60,18 +69,9 @@ impl<'a> WasmModule<'a> {
 
     pub(crate) fn parse_function_section(
         fread: wasmparser::FunctionSectionReader,
-        num_import_funcs: u32,
         sigs: Vec<FuncType>,
     ) -> Result<Vec<FuncDecl>> {
         let mut func_decls = vec![];
-
-        if fread.count() != num_import_funcs as u32 {
-            anyhow::bail!(
-                "malformed func imports, function section size does not match import section size, {}/{}",
-                fread.count(),
-                num_import_funcs
-            );
-        }
 
         for ind in fread {
             let ind = ind?;
@@ -145,7 +145,7 @@ impl<'a> WasmModule<'a> {
         &self,
         dread: wasmparser::DataSectionReader<'a>,
     ) -> Result<Vec<Data<'a>>> {
-        if let Some(count) = self.data_count {
+        if let Some(count) = self.get_data_count() {
             if dread.count() != count {
                 anyhow::bail!("data count section does not match data section size");
             }
@@ -158,9 +158,7 @@ impl<'a> WasmModule<'a> {
         Ok(datas)
     }
 
-    pub(crate) fn parse_code_section(
-        func_body: wasmparser::FunctionBody<'a>,
-    ) -> Result<(Vec<(u32, ValType)>, Vec<Instructions>)> {
+    pub(crate) fn parse_code_section(func_body: wasmparser::FunctionBody<'a>) -> Result<FuncBody> {
         let mut locals = vec![];
         let local_reader = func_body.get_locals_reader()?;
         for local in local_reader {
@@ -176,11 +174,11 @@ impl<'a> WasmModule<'a> {
         }
         // the remaining bytes are the operators
         let code_bytes = binary_reader
-            .read_bytes(binary_reader.bytes_remaining() as usize)?
+            .read_bytes(binary_reader.bytes_remaining())?
             .to_vec();
 
         let insts = Instructions::from_code_bytes(code_bytes)?;
 
-        Ok((locals, insts))
+        Ok(FuncBody { locals, insts })
     }
 }

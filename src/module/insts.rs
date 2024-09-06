@@ -115,7 +115,7 @@ impl Instructions {
         let mut binary_reader = BinaryReader::new(&code_bytes, 0, WasmFeatures::all());
 
         while !binary_reader.eof() {
-            let opcode = binary_reader.read_u32()?;
+            let opcode = binary_reader.read_var_u32()?;
             match opcode {
                 WASM_OP_UNREACHABLE => insts.push(Instructions::Unreachable),
                 WASM_OP_NOP => insts.push(Instructions::Nop),

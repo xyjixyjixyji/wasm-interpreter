@@ -5,5 +5,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-leb128 = "0.2.5"
+env_logger = "0.11.5"
+log = "0.4.22"
 wasmparser = "0.216.0"
