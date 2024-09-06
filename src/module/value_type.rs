@@ -1,5 +1,6 @@
 use wasmparser::ValType;
 
+#[derive(Debug, Clone, Copy)]
 pub enum WasmValue {
     I32(i32),
     F64(f64),

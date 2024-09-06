@@ -8,7 +8,10 @@ use std::{
 
 use super::{interpreter::LinearMemory, WasmFunctionExecutor};
 use crate::module::{
-    components::FuncDecl, insts::Instructions, value_type::WasmValue, wasm_module::WasmModule,
+    components::FuncDecl,
+    insts::{I32Binop, Instructions},
+    value_type::WasmValue,
+    wasm_module::WasmModule,
 };
 
 struct Pc(usize);
@@ -39,7 +42,7 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
     fn execute(&mut self) -> Result<WasmValue> {
         let mut done_exec = false;
         while !done_exec && self.pc.0 < self.func.get_insts().len() {
-            let inst = self.func.get_inst(self.pc.0);
+            let inst = self.func.get_inst(self.pc.0).clone();
             match inst {
                 Instructions::Return => {
                     done_exec = true;
@@ -70,9 +73,22 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                     self.inc_pc();
                 }
                 Instructions::Select => todo!(),
-                Instructions::LocalGet { local_idx } => todo!(),
-                Instructions::LocalSet { local_idx } => todo!(),
-                Instructions::LocalTee { local_idx } => todo!(),
+                Instructions::LocalGet { local_idx } => {
+                    let local = self.locals[local_idx as usize];
+                    self.push_operand_stack(local);
+                    self.inc_pc();
+                }
+                Instructions::LocalSet { local_idx } => {
+                    let value = self.pop_operand_stack();
+                    self.locals[local_idx as usize] = value;
+                    self.inc_pc();
+                }
+                Instructions::LocalTee { local_idx } => {
+                    let value = self.pop_operand_stack();
+                    self.locals[local_idx as usize] = value;
+                    self.push_operand_stack(value);
+                    self.inc_pc();
+                }
                 Instructions::GlobalGet { global_idx } => todo!(),
                 Instructions::GlobalSet { global_idx } => todo!(),
                 Instructions::I32Load { memarg } => todo!(),
@@ -88,25 +104,28 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                 Instructions::I32Store8 { memarg } => todo!(),
                 Instructions::I32Store16 { memarg } => todo!(),
                 Instructions::MemorySize { mem } => {
-                    self.run_memory_size(*mem)?;
+                    self.run_memory_size(mem)?;
                     self.inc_pc();
                 }
                 Instructions::MemoryGrow { mem } => {
-                    self.run_memory_grow(*mem)?;
+                    self.run_memory_grow(mem)?;
                     self.inc_pc();
                 }
                 Instructions::I32Const { value } => {
-                    self.push_operand_stack(WasmValue::I32(*value));
+                    self.push_operand_stack(WasmValue::I32(value));
                     self.inc_pc();
                 }
                 Instructions::F64Const { value } => {
-                    self.push_operand_stack(WasmValue::F64(*value));
+                    self.push_operand_stack(WasmValue::F64(value));
                     self.inc_pc();
                 }
                 Instructions::I32Unop(_) => todo!(),
-                Instructions::I32BinOp(_) => todo!(),
+                Instructions::I32Binp(i32_binop) => {
+                    self.run_i32_binop(&i32_binop)?;
+                    self.inc_pc();
+                }
                 Instructions::F64Unop(_) => todo!(),
-                Instructions::F64BinOp(_) => todo!(),
+                Instructions::F64Binop(_) => todo!(),
             }
         }
 
@@ -150,7 +169,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     }
 
     pub fn push_operand_stack(&mut self, value: WasmValue) {
-        self.operand_stack.push_back(value);
+        self.operand_stack.push_front(value);
     }
 
     pub fn pop_operand_stack(&mut self) -> WasmValue {
@@ -212,6 +231,42 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
 
         self.operand_stack
             .push_back(WasmValue::I32(i32::try_from(self.mem_size()).unwrap()));
+
+        Ok(())
+    }
+
+    fn run_i32_binop(&mut self, i32_binop: &I32Binop) -> Result<()> {
+        let b = self.pop_operand_stack().as_i32();
+        let a = self.pop_operand_stack().as_i32();
+        let result = match i32_binop {
+            I32Binop::Eq => i32::try_from(a == b)?,
+            I32Binop::Ne => i32::try_from(a != b)?,
+            I32Binop::LtS => i32::try_from(a < b)?,
+            I32Binop::LtU => i32::try_from((a as u32) < (b as u32))?,
+            I32Binop::GtS => i32::try_from(a > b)?,
+            I32Binop::GtU => i32::try_from((a as u32) > (b as u32))?,
+            I32Binop::LeS => i32::try_from(a <= b)?,
+            I32Binop::LeU => i32::try_from((a as u32) <= (b as u32))?,
+            I32Binop::GeS => i32::try_from(a >= b)?,
+            I32Binop::GeU => i32::try_from((a as u32) >= (b as u32))?,
+            I32Binop::Add => i32::try_from(a + b)?,
+            I32Binop::Sub => i32::try_from(a - b)?,
+            I32Binop::Mul => i32::try_from(a * b)?,
+            I32Binop::DivS => todo!(),
+            I32Binop::DivU => todo!(),
+            I32Binop::RemS => todo!(),
+            I32Binop::RemU => todo!(),
+            I32Binop::And => i32::try_from(a & b)?,
+            I32Binop::Or => i32::try_from(a | b)?,
+            I32Binop::Xor => i32::try_from(a ^ b)?,
+            I32Binop::Shl => i32::try_from(a.wrapping_shl((b & 0x1f) as u32))?,
+            I32Binop::ShrS => todo!(),
+            I32Binop::ShrU => todo!(),
+            I32Binop::Rotl => todo!(),
+            I32Binop::Rotr => todo!(),
+        };
+
+        self.push_operand_stack(WasmValue::I32(result));
 
         Ok(())
     }

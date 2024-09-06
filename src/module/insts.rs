@@ -16,7 +16,8 @@ pub struct MemArg {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum I32Unops {
+pub enum I32Unop {
+    Eqz,
     Clz,
     Ctz,
     Popcnt,
@@ -27,22 +28,8 @@ pub enum I32Unops {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum F64Unops {
-    Abs,
-    Neg,
-    Ceil,
-    Floor,
-    Trunc,
-    Nearest,
-    Sqrt,
-    I32TruncF64S,
-    I32TruncF64U,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum I32Binops {
+pub enum I32Binop {
     Eq,
-    Eqz,
     Ne,
     LtS,
     LtU,
@@ -70,7 +57,20 @@ pub enum I32Binops {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum F64Binops {
+pub enum F64Unop {
+    Abs,
+    Neg,
+    Ceil,
+    Floor,
+    Trunc,
+    Nearest,
+    Sqrt,
+    I32TruncF64S,
+    I32TruncF64U,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum F64Binop {
     Eq,
     Ne,
     Lt,
@@ -127,10 +127,10 @@ pub enum Instructions {
     I32Const { value: i32 },
     F64Const { value: f64 },
     // arithmetic
-    I32Unop(I32Unops),
-    I32BinOp(I32Binops),
-    F64Unop(F64Unops),
-    F64BinOp(F64Binops),
+    I32Unop(I32Unop),
+    I32Binp(I32Binop),
+    F64Unop(F64Unop),
+    F64Binop(F64Binop),
 }
 
 impl Instructions {
@@ -236,68 +236,64 @@ impl Instructions {
                 WASM_OP_F64_CONST => insts.push(Instructions::F64Const {
                     value: f64::from(binary_reader.read_f64()?),
                 }),
-                WASM_OP_I32_EQZ => insts.push(Instructions::I32BinOp(I32Binops::Eqz)),
-                WASM_OP_I32_EQ => insts.push(Instructions::I32BinOp(I32Binops::Eq)),
-                WASM_OP_I32_NE => insts.push(Instructions::I32BinOp(I32Binops::Ne)),
-                WASM_OP_I32_LT_S => insts.push(Instructions::I32BinOp(I32Binops::LtS)),
-                WASM_OP_I32_LT_U => insts.push(Instructions::I32BinOp(I32Binops::LtU)),
-                WASM_OP_I32_GT_S => insts.push(Instructions::I32BinOp(I32Binops::GtS)),
-                WASM_OP_I32_GT_U => insts.push(Instructions::I32BinOp(I32Binops::GtU)),
-                WASM_OP_I32_LE_S => insts.push(Instructions::I32BinOp(I32Binops::LeS)),
-                WASM_OP_I32_LE_U => insts.push(Instructions::I32BinOp(I32Binops::LeU)),
-                WASM_OP_I32_GE_S => insts.push(Instructions::I32BinOp(I32Binops::GeS)),
-                WASM_OP_I32_GE_U => insts.push(Instructions::I32BinOp(I32Binops::GeU)),
-                WASM_OP_F64_EQ => insts.push(Instructions::F64BinOp(F64Binops::Eq)),
-                WASM_OP_F64_NE => insts.push(Instructions::F64BinOp(F64Binops::Ne)),
-                WASM_OP_F64_LT => insts.push(Instructions::F64BinOp(F64Binops::Lt)),
-                WASM_OP_F64_GT => insts.push(Instructions::F64BinOp(F64Binops::Gt)),
-                WASM_OP_F64_LE => insts.push(Instructions::F64BinOp(F64Binops::Le)),
-                WASM_OP_F64_GE => insts.push(Instructions::F64BinOp(F64Binops::Ge)),
-                WASM_OP_I32_CLZ => insts.push(Instructions::I32Unop(I32Unops::Clz)),
-                WASM_OP_I32_CTZ => insts.push(Instructions::I32Unop(I32Unops::Ctz)),
-                WASM_OP_I32_POPCNT => insts.push(Instructions::I32Unop(I32Unops::Popcnt)),
-                WASM_OP_I32_ADD => insts.push(Instructions::I32BinOp(I32Binops::Add)),
-                WASM_OP_I32_SUB => insts.push(Instructions::I32BinOp(I32Binops::Sub)),
-                WASM_OP_I32_MUL => insts.push(Instructions::I32BinOp(I32Binops::Mul)),
-                WASM_OP_I32_DIV_S => insts.push(Instructions::I32BinOp(I32Binops::DivS)),
-                WASM_OP_I32_DIV_U => insts.push(Instructions::I32BinOp(I32Binops::DivU)),
-                WASM_OP_I32_REM_S => insts.push(Instructions::I32BinOp(I32Binops::RemS)),
-                WASM_OP_I32_REM_U => insts.push(Instructions::I32BinOp(I32Binops::RemU)),
-                WASM_OP_I32_AND => insts.push(Instructions::I32BinOp(I32Binops::And)),
-                WASM_OP_I32_OR => insts.push(Instructions::I32BinOp(I32Binops::Or)),
-                WASM_OP_I32_XOR => insts.push(Instructions::I32BinOp(I32Binops::Xor)),
-                WASM_OP_I32_SHL => insts.push(Instructions::I32BinOp(I32Binops::Shl)),
-                WASM_OP_I32_SHR_S => insts.push(Instructions::I32BinOp(I32Binops::ShrS)),
-                WASM_OP_I32_SHR_U => insts.push(Instructions::I32BinOp(I32Binops::ShrU)),
-                WASM_OP_I32_ROTL => insts.push(Instructions::I32BinOp(I32Binops::Rotl)),
-                WASM_OP_I32_ROTR => insts.push(Instructions::I32BinOp(I32Binops::Rotr)),
-                WASM_OP_F64_ABS => insts.push(Instructions::F64Unop(F64Unops::Abs)),
-                WASM_OP_F64_NEG => insts.push(Instructions::F64Unop(F64Unops::Neg)),
-                WASM_OP_F64_CEIL => insts.push(Instructions::F64Unop(F64Unops::Ceil)),
-                WASM_OP_F64_FLOOR => insts.push(Instructions::F64Unop(F64Unops::Floor)),
-                WASM_OP_F64_TRUNC => insts.push(Instructions::F64Unop(F64Unops::Trunc)),
-                WASM_OP_F64_NEAREST => insts.push(Instructions::F64Unop(F64Unops::Nearest)),
-                WASM_OP_F64_SQRT => insts.push(Instructions::F64Unop(F64Unops::Sqrt)),
-                WASM_OP_F64_ADD => insts.push(Instructions::F64BinOp(F64Binops::Add)),
-                WASM_OP_F64_SUB => insts.push(Instructions::F64BinOp(F64Binops::Sub)),
-                WASM_OP_F64_MUL => insts.push(Instructions::F64BinOp(F64Binops::Mul)),
-                WASM_OP_F64_DIV => insts.push(Instructions::F64BinOp(F64Binops::Div)),
-                WASM_OP_F64_MIN => insts.push(Instructions::F64BinOp(F64Binops::Min)),
-                WASM_OP_F64_MAX => insts.push(Instructions::F64BinOp(F64Binops::Max)),
-                WASM_OP_I32_TRUNC_F64_S => {
-                    insts.push(Instructions::F64Unop(F64Unops::I32TruncF64S))
-                }
-                WASM_OP_I32_TRUNC_F64_U => {
-                    insts.push(Instructions::F64Unop(F64Unops::I32TruncF64U))
-                }
+                WASM_OP_I32_EQZ => insts.push(Instructions::I32Unop(I32Unop::Eqz)),
+                WASM_OP_I32_EQ => insts.push(Instructions::I32Binp(I32Binop::Eq)),
+                WASM_OP_I32_NE => insts.push(Instructions::I32Binp(I32Binop::Ne)),
+                WASM_OP_I32_LT_S => insts.push(Instructions::I32Binp(I32Binop::LtS)),
+                WASM_OP_I32_LT_U => insts.push(Instructions::I32Binp(I32Binop::LtU)),
+                WASM_OP_I32_GT_S => insts.push(Instructions::I32Binp(I32Binop::GtS)),
+                WASM_OP_I32_GT_U => insts.push(Instructions::I32Binp(I32Binop::GtU)),
+                WASM_OP_I32_LE_S => insts.push(Instructions::I32Binp(I32Binop::LeS)),
+                WASM_OP_I32_LE_U => insts.push(Instructions::I32Binp(I32Binop::LeU)),
+                WASM_OP_I32_GE_S => insts.push(Instructions::I32Binp(I32Binop::GeS)),
+                WASM_OP_I32_GE_U => insts.push(Instructions::I32Binp(I32Binop::GeU)),
+                WASM_OP_F64_EQ => insts.push(Instructions::F64Binop(F64Binop::Eq)),
+                WASM_OP_F64_NE => insts.push(Instructions::F64Binop(F64Binop::Ne)),
+                WASM_OP_F64_LT => insts.push(Instructions::F64Binop(F64Binop::Lt)),
+                WASM_OP_F64_GT => insts.push(Instructions::F64Binop(F64Binop::Gt)),
+                WASM_OP_F64_LE => insts.push(Instructions::F64Binop(F64Binop::Le)),
+                WASM_OP_F64_GE => insts.push(Instructions::F64Binop(F64Binop::Ge)),
+                WASM_OP_I32_CLZ => insts.push(Instructions::I32Unop(I32Unop::Clz)),
+                WASM_OP_I32_CTZ => insts.push(Instructions::I32Unop(I32Unop::Ctz)),
+                WASM_OP_I32_POPCNT => insts.push(Instructions::I32Unop(I32Unop::Popcnt)),
+                WASM_OP_I32_ADD => insts.push(Instructions::I32Binp(I32Binop::Add)),
+                WASM_OP_I32_SUB => insts.push(Instructions::I32Binp(I32Binop::Sub)),
+                WASM_OP_I32_MUL => insts.push(Instructions::I32Binp(I32Binop::Mul)),
+                WASM_OP_I32_DIV_S => insts.push(Instructions::I32Binp(I32Binop::DivS)),
+                WASM_OP_I32_DIV_U => insts.push(Instructions::I32Binp(I32Binop::DivU)),
+                WASM_OP_I32_REM_S => insts.push(Instructions::I32Binp(I32Binop::RemS)),
+                WASM_OP_I32_REM_U => insts.push(Instructions::I32Binp(I32Binop::RemU)),
+                WASM_OP_I32_AND => insts.push(Instructions::I32Binp(I32Binop::And)),
+                WASM_OP_I32_OR => insts.push(Instructions::I32Binp(I32Binop::Or)),
+                WASM_OP_I32_XOR => insts.push(Instructions::I32Binp(I32Binop::Xor)),
+                WASM_OP_I32_SHL => insts.push(Instructions::I32Binp(I32Binop::Shl)),
+                WASM_OP_I32_SHR_S => insts.push(Instructions::I32Binp(I32Binop::ShrS)),
+                WASM_OP_I32_SHR_U => insts.push(Instructions::I32Binp(I32Binop::ShrU)),
+                WASM_OP_I32_ROTL => insts.push(Instructions::I32Binp(I32Binop::Rotl)),
+                WASM_OP_I32_ROTR => insts.push(Instructions::I32Binp(I32Binop::Rotr)),
+                WASM_OP_F64_ABS => insts.push(Instructions::F64Unop(F64Unop::Abs)),
+                WASM_OP_F64_NEG => insts.push(Instructions::F64Unop(F64Unop::Neg)),
+                WASM_OP_F64_CEIL => insts.push(Instructions::F64Unop(F64Unop::Ceil)),
+                WASM_OP_F64_FLOOR => insts.push(Instructions::F64Unop(F64Unop::Floor)),
+                WASM_OP_F64_TRUNC => insts.push(Instructions::F64Unop(F64Unop::Trunc)),
+                WASM_OP_F64_NEAREST => insts.push(Instructions::F64Unop(F64Unop::Nearest)),
+                WASM_OP_F64_SQRT => insts.push(Instructions::F64Unop(F64Unop::Sqrt)),
+                WASM_OP_F64_ADD => insts.push(Instructions::F64Binop(F64Binop::Add)),
+                WASM_OP_F64_SUB => insts.push(Instructions::F64Binop(F64Binop::Sub)),
+                WASM_OP_F64_MUL => insts.push(Instructions::F64Binop(F64Binop::Mul)),
+                WASM_OP_F64_DIV => insts.push(Instructions::F64Binop(F64Binop::Div)),
+                WASM_OP_F64_MIN => insts.push(Instructions::F64Binop(F64Binop::Min)),
+                WASM_OP_F64_MAX => insts.push(Instructions::F64Binop(F64Binop::Max)),
+                WASM_OP_I32_TRUNC_F64_S => insts.push(Instructions::F64Unop(F64Unop::I32TruncF64S)),
+                WASM_OP_I32_TRUNC_F64_U => insts.push(Instructions::F64Unop(F64Unop::I32TruncF64U)),
                 WASM_OP_F64_CONVERT_I32_S => {
-                    insts.push(Instructions::I32Unop(I32Unops::F64ConvertI32S))
+                    insts.push(Instructions::I32Unop(I32Unop::F64ConvertI32S))
                 }
                 WASM_OP_F64_CONVERT_I32_U => {
-                    insts.push(Instructions::I32Unop(I32Unops::F64ConvertI32U))
+                    insts.push(Instructions::I32Unop(I32Unop::F64ConvertI32U))
                 }
-                WASM_OP_I32_EXTEND8_S => insts.push(Instructions::I32Unop(I32Unops::Extend8S)),
-                WASM_OP_I32_EXTEND16_S => insts.push(Instructions::I32Unop(I32Unops::Extend16S)),
+                WASM_OP_I32_EXTEND8_S => insts.push(Instructions::I32Unop(I32Unop::Extend8S)),
+                WASM_OP_I32_EXTEND16_S => insts.push(Instructions::I32Unop(I32Unop::Extend16S)),
                 _ => anyhow::bail!("unsupported opcode: 0x{:x}", opcode),
             }
         }
