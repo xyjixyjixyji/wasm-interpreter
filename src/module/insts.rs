@@ -1,5 +1,5 @@
 use anyhow::Result;
-use wasmparser::{BinaryReader, BlockType, MemArg, WasmFeatures};
+use wasmparser::{BinaryReader, BlockType, WasmFeatures};
 
 use super::wasmops::*;
 
@@ -7,6 +7,12 @@ use super::wasmops::*;
 pub struct BrTable {
     targets: Vec<u32>,
     default_target: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MemArg {
+    offset: u32,
+    align: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -133,7 +139,134 @@ impl Instructions {
                 WASM_OP_BR_TABLE => insts.push(Instructions::BrTable {
                     table: Self::read_br_table(&mut binary_reader)?,
                 }),
-                _ => anyhow::bail!("unsupported opcode: {}", opcode),
+                WASM_OP_RETURN => insts.push(Instructions::Return),
+                WASM_OP_CALL => insts.push(Instructions::Call {
+                    func_idx: binary_reader.read_var_u32()?,
+                }),
+                WASM_OP_CALL_INDIRECT => insts.push(Instructions::CallIndirect {
+                    type_index: binary_reader.read_var_u32()?,
+                    table_index: binary_reader.read_var_u32()?,
+                }),
+                WASM_OP_DROP => insts.push(Instructions::Drop),
+                WASM_OP_SELECT => insts.push(Instructions::Select),
+                WASM_OP_LOCAL_GET => insts.push(Instructions::LocalGet {
+                    local_idx: binary_reader.read_var_u32()?,
+                }),
+                WASM_OP_LOCAL_SET => insts.push(Instructions::LocalSet {
+                    local_idx: binary_reader.read_var_u32()?,
+                }),
+                WASM_OP_LOCAL_TEE => insts.push(Instructions::LocalTee {
+                    local_idx: binary_reader.read_var_u32()?,
+                }),
+                WASM_OP_GLOBAL_GET => insts.push(Instructions::GlobalGet {
+                    global_idx: binary_reader.read_var_u32()?,
+                }),
+                WASM_OP_GLOBAL_SET => insts.push(Instructions::GlobalSet {
+                    global_idx: binary_reader.read_var_u32()?,
+                }),
+                WASM_OP_I32_LOAD => insts.push(Instructions::I32Load {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_I64_LOAD => insts.push(Instructions::I64Load {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_F32_LOAD => insts.push(Instructions::F32Load {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_F64_LOAD => insts.push(Instructions::F64Load {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_I32_LOAD8_S => insts.push(Instructions::I32Load8S {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_I32_LOAD8_U => insts.push(Instructions::I32Load8U {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_I32_LOAD16_S => insts.push(Instructions::I32Load16S {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_I32_LOAD16_U => insts.push(Instructions::I32Load16U {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_I32_STORE => insts.push(Instructions::I32Store {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_F64_STORE => insts.push(Instructions::F64Store {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_I32_STORE8 => insts.push(Instructions::I32Store8 {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_I32_STORE16 => insts.push(Instructions::I32Store16 {
+                    memarg: Self::read_memarg(&mut binary_reader)?,
+                }),
+                WASM_OP_MEMORY_SIZE => insts.push(Instructions::MemorySize {
+                    mem: binary_reader.read_var_u32()?, // always 0
+                }),
+                WASM_OP_MEMORY_GROW => insts.push(Instructions::MemoryGrow {
+                    mem: binary_reader.read_var_u32()?, // always 0
+                }),
+                WASM_OP_I32_CONST => insts.push(Instructions::I32Const {
+                    value: binary_reader.read_var_i32()?,
+                }),
+                WASM_OP_F64_CONST => insts.push(Instructions::F64Const {
+                    value: f64::from(binary_reader.read_f64()?),
+                }),
+                WASM_OP_I32_EQZ => insts.push(Instructions::I32Eqz),
+                WASM_OP_I32_EQ => insts.push(Instructions::I32Eq),
+                WASM_OP_I32_NE => insts.push(Instructions::I32Ne),
+                WASM_OP_I32_LT_S => insts.push(Instructions::I32LtS),
+                WASM_OP_I32_LT_U => insts.push(Instructions::I32LtU),
+                WASM_OP_I32_GT_S => insts.push(Instructions::I32GtS),
+                WASM_OP_I32_GT_U => insts.push(Instructions::I32GtU),
+                WASM_OP_I32_LE_S => insts.push(Instructions::I32LeS),
+                WASM_OP_I32_LE_U => insts.push(Instructions::I32LeU),
+                WASM_OP_I32_GE_S => insts.push(Instructions::I32GeS),
+                WASM_OP_I32_GE_U => insts.push(Instructions::I32GeU),
+                WASM_OP_F64_EQ => insts.push(Instructions::F64Eq),
+                WASM_OP_F64_NE => insts.push(Instructions::F64Ne),
+                WASM_OP_F64_LT => insts.push(Instructions::F64Lt),
+                WASM_OP_F64_GT => insts.push(Instructions::F64Gt),
+                WASM_OP_F64_LE => insts.push(Instructions::F64Le),
+                WASM_OP_F64_GE => insts.push(Instructions::F64Ge),
+                WASM_OP_I32_CLZ => insts.push(Instructions::I32Clz),
+                WASM_OP_I32_CTZ => insts.push(Instructions::I32Ctz),
+                WASM_OP_I32_POPCNT => insts.push(Instructions::I32Popcnt),
+                WASM_OP_I32_ADD => insts.push(Instructions::I32Add),
+                WASM_OP_I32_SUB => insts.push(Instructions::I32Sub),
+                WASM_OP_I32_MUL => insts.push(Instructions::I32Mul),
+                WASM_OP_I32_DIV_S => insts.push(Instructions::I32DivS),
+                WASM_OP_I32_DIV_U => insts.push(Instructions::I32DivU),
+                WASM_OP_I32_REM_S => insts.push(Instructions::I32RemS),
+                WASM_OP_I32_REM_U => insts.push(Instructions::I32RemU),
+                WASM_OP_I32_AND => insts.push(Instructions::I32And),
+                WASM_OP_I32_OR => insts.push(Instructions::I32Or),
+                WASM_OP_I32_XOR => insts.push(Instructions::I32Xor),
+                WASM_OP_I32_SHL => insts.push(Instructions::I32Shl),
+                WASM_OP_I32_SHR_S => insts.push(Instructions::I32ShrS),
+                WASM_OP_I32_SHR_U => insts.push(Instructions::I32ShrU),
+                WASM_OP_I32_ROTL => insts.push(Instructions::I32Rotl),
+                WASM_OP_I32_ROTR => insts.push(Instructions::I32Rotr),
+                WASM_OP_F64_ABS => insts.push(Instructions::F64Abs),
+                WASM_OP_F64_NEG => insts.push(Instructions::F64Neg),
+                WASM_OP_F64_CEIL => insts.push(Instructions::F64Ceil),
+                WASM_OP_F64_FLOOR => insts.push(Instructions::F64Floor),
+                WASM_OP_F64_TRUNC => insts.push(Instructions::F64Trunc),
+                WASM_OP_F64_NEAREST => insts.push(Instructions::F64Nearest),
+                WASM_OP_F64_SQRT => insts.push(Instructions::F64Sqrt),
+                WASM_OP_F64_ADD => insts.push(Instructions::F64Add),
+                WASM_OP_F64_SUB => insts.push(Instructions::F64Sub),
+                WASM_OP_F64_MUL => insts.push(Instructions::F64Mul),
+                WASM_OP_F64_DIV => insts.push(Instructions::F64Div),
+                WASM_OP_F64_MIN => insts.push(Instructions::F64Min),
+                WASM_OP_F64_MAX => insts.push(Instructions::F64Max),
+                WASM_OP_I32_TRUNC_F64_S => insts.push(Instructions::I32TruncF64S),
+                WASM_OP_I32_TRUNC_F64_U => insts.push(Instructions::I32TruncF64U),
+                WASM_OP_F64_CONVERT_I32_S => insts.push(Instructions::F64ConvertI32S),
+                WASM_OP_F64_CONVERT_I32_U => insts.push(Instructions::F64ConvertI32U),
+                WASM_OP_I32_EXTEND8_S => insts.push(Instructions::I32Extend8S),
+                WASM_OP_I32_EXTEND16_S => insts.push(Instructions::I32Extend16S),
+                _ => anyhow::bail!("unsupported opcode: 0x{:x}", opcode),
             }
         }
 
@@ -170,5 +303,11 @@ impl Instructions {
             targets,
             default_target,
         })
+    }
+
+    fn read_memarg(binary_reader: &mut BinaryReader) -> Result<MemArg> {
+        let offset = binary_reader.read_var_u32()?;
+        let align = binary_reader.read_var_u32()?;
+        Ok(MemArg { offset, align })
     }
 }
