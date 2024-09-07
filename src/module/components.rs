@@ -1,5 +1,5 @@
 use super::{insts::Instructions, parse::FuncBody};
-use wasmparser::{FuncType, Import, ValType};
+use wasmparser::{FuncType, GlobalType, Import, ValType};
 
 #[derive(Default, Debug)]
 pub struct ImportSet<'a> {
@@ -51,5 +51,29 @@ impl FuncDecl {
     pub fn add_func_body(&mut self, func_body: FuncBody) {
         self.pure_locals = func_body.locals;
         self.insts = func_body.insts;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobalDecl {
+    ty: GlobalType,
+    init_expr: Vec<u8>,
+}
+
+impl GlobalDecl {
+    pub fn new(ty: GlobalType, init_expr: Vec<u8>) -> Self {
+        Self { ty, init_expr }
+    }
+
+    pub fn get_ty(&self) -> &GlobalType {
+        &self.ty
+    }
+
+    pub fn get_init_expr(&self) -> &Vec<u8> {
+        &self.init_expr
+    }
+
+    pub fn set_init_expr(&mut self, init_expr: Vec<u8>) {
+        self.init_expr = init_expr;
     }
 }

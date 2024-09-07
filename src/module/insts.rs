@@ -11,8 +11,8 @@ pub struct BrTable {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemArg {
-    offset: u32,
-    align: u32,
+    pub offset: u32,
+    pub align: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,8 +111,6 @@ pub enum Instructions {
     GlobalSet { global_idx: u32 },
     // memory
     I32Load { memarg: MemArg },
-    I64Load { memarg: MemArg },
-    F32Load { memarg: MemArg },
     F64Load { memarg: MemArg },
     I32Load8S { memarg: MemArg },
     I32Load8U { memarg: MemArg },
@@ -189,12 +187,6 @@ impl Instructions {
                     global_idx: binary_reader.read_var_u32()?,
                 }),
                 WASM_OP_I32_LOAD => insts.push(Instructions::I32Load {
-                    memarg: Self::read_memarg(&mut binary_reader)?,
-                }),
-                WASM_OP_I64_LOAD => insts.push(Instructions::I64Load {
-                    memarg: Self::read_memarg(&mut binary_reader)?,
-                }),
-                WASM_OP_F32_LOAD => insts.push(Instructions::F32Load {
                     memarg: Self::read_memarg(&mut binary_reader)?,
                 }),
                 WASM_OP_F64_LOAD => insts.push(Instructions::F64Load {

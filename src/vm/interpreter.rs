@@ -1,4 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
+use debug_cell::RefCell;
+use std::rc::Rc;
 
 use crate::{
     module::{value_type::WasmValue, wasm_module::WasmModule},
@@ -28,25 +29,26 @@ pub struct WasmInterpreter<'a> {
 impl<'a> WasmVm for WasmInterpreter<'a> {
     fn run(&self, main_params: Vec<WasmValue>) -> anyhow::Result<String> {
         // find main from export to run
-        for export in self.module.borrow().get_exports() {
-            if export.name == "main" {
-                let module_ref = self.module.borrow();
-                let func = module_ref
-                    .get_func(export.index)
-                    .expect("main function not found");
-                let mut executor = WasmFunctionExecutorImpl::new(
-                    func.clone(),
-                    Rc::clone(&self.module),
-                    Rc::clone(&self.mem),
-                    Some(main_params),
-                );
+        let main_func = {
+            let module_ref = self.module.borrow();
+            module_ref
+                .get_exports()
+                .iter()
+                .find(|export| export.name == "main")
+                .and_then(|export| module_ref.get_func(export.index))
+                .ok_or_else(|| anyhow::anyhow!("main function not found"))?
+                .clone()
+        };
 
-                let result = executor.execute()?;
-                return Ok(result.to_string());
-            }
-        }
+        let mut executor = WasmFunctionExecutorImpl::new(
+            main_func,
+            Rc::clone(&self.module),
+            Rc::clone(&self.mem),
+            Some(main_params),
+        );
 
-        Err(anyhow::anyhow!("main function not found"))
+        let result = executor.execute()?;
+        Ok(result.to_string())
     }
 }
 

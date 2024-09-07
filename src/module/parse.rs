@@ -2,7 +2,7 @@ use anyhow::Result;
 use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Table, ValType};
 
 use super::{
-    components::{FuncDecl, ImportSet},
+    components::{FuncDecl, GlobalDecl, ImportSet},
     insts::Instructions,
     wasm_module::WasmModule,
 };
@@ -113,10 +113,18 @@ impl<'a> WasmModule<'a> {
 
     pub(crate) fn parse_global_section(
         gread: wasmparser::GlobalSectionReader<'a>,
-    ) -> Result<Vec<Global<'a>>> {
+    ) -> Result<Vec<GlobalDecl>> {
         let mut globals = vec![];
         for global in gread {
-            globals.push(global?);
+            let global = global?;
+            let ty = global.ty;
+            let mut init_expr = global.init_expr.get_binary_reader();
+            let mut init_expr_bytes = vec![];
+            while !init_expr.eof() {
+                init_expr_bytes.push(init_expr.read_u8()?);
+            }
+
+            globals.push(GlobalDecl::new(ty, init_expr_bytes));
         }
         Ok(globals)
     }

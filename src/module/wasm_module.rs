@@ -1,6 +1,6 @@
-use super::components::{FuncDecl, ImportSet};
+use super::components::{FuncDecl, GlobalDecl, ImportSet};
 use anyhow::Result;
-use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Parser, Payload::*, Table};
+use wasmparser::{Data, Element, Export, FuncType, MemoryType, Parser, Payload::*, Table};
 
 #[derive(Default)]
 pub struct WasmModule<'a> {
@@ -9,7 +9,7 @@ pub struct WasmModule<'a> {
     funcs: Vec<FuncDecl>,
     tables: Vec<Table<'a>>,
     mems: Vec<MemoryType>,
-    globals: Vec<Global<'a>>,
+    globals: Vec<GlobalDecl>,
     exports: Vec<Export<'a>>,
     elems: Vec<Element<'a>>,
     datas: Vec<Data<'a>>,
@@ -151,5 +151,13 @@ impl<'a> WasmModule<'a> {
 
     pub fn get_exports(&self) -> &Vec<Export<'a>> {
         &self.exports
+    }
+
+    pub fn get_globals(&self) -> &Vec<GlobalDecl> {
+        &self.globals
+    }
+
+    pub fn get_globals_mut(&mut self) -> &mut Vec<GlobalDecl> {
+        &mut self.globals
     }
 }
