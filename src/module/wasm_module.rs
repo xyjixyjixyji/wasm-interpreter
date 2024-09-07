@@ -157,6 +157,10 @@ impl<'a> WasmModule<'a> {
         &self.globals
     }
 
+    pub fn get_elems(&self) -> &Vec<Element<'a>> {
+        &self.elems
+    }
+
     pub fn get_globals_mut(&mut self) -> &mut Vec<GlobalDecl> {
         &mut self.globals
     }

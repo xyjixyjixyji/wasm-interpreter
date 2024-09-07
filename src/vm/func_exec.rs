@@ -71,11 +71,19 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                 Instructions::Br { rel_depth } => todo!(),
                 Instructions::BrIf { rel_depth } => todo!(),
                 Instructions::BrTable { table } => todo!(),
-                Instructions::Call { func_idx } => todo!(),
+                Instructions::Call { func_idx } => {
+                    let func = self.module.borrow().get_func(func_idx).unwrap().clone();
+                    let v = self.call_func(func);
+                    self.push_operand_stack(v);
+                    self.inc_pc();
+                }
                 Instructions::CallIndirect {
                     type_index,
                     table_index,
-                } => todo!(),
+                } => {
+                    self.run_call_indirect(type_index, table_index)?;
+                    self.inc_pc();
+                }
                 Instructions::Drop => {
                     self.pop_operand_stack();
                     self.inc_pc();
@@ -139,10 +147,22 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                     self.push_operand_stack(WasmValue::I32(v));
                     self.inc_pc();
                 }
-                Instructions::I32Store { memarg } => todo!(),
-                Instructions::F64Store { memarg } => todo!(),
-                Instructions::I32Store8 { memarg } => todo!(),
-                Instructions::I32Store16 { memarg } => todo!(),
+                Instructions::I32Store { memarg } => {
+                    self.run_i32_store(&memarg, 4)?;
+                    self.inc_pc();
+                }
+                Instructions::F64Store { memarg } => {
+                    self.run_f64_store(&memarg)?;
+                    self.inc_pc();
+                }
+                Instructions::I32Store8 { memarg } => {
+                    self.run_i32_store(&memarg, 1)?;
+                    self.inc_pc();
+                }
+                Instructions::I32Store16 { memarg } => {
+                    self.run_i32_store(&memarg, 2)?;
+                    self.inc_pc();
+                }
                 Instructions::MemorySize { mem } => {
                     self.run_memory_size(mem)?;
                     self.inc_pc();
@@ -267,6 +287,55 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
 
 /// Instruction execution
 impl<'a> WasmFunctionExecutorImpl<'a> {
+    fn run_call_indirect(&mut self, type_index: u32, table_index: u32) -> Result<()> {
+        let callee_index_in_table = self.pop_operand_stack().as_i32();
+
+        let module_ref = self.module.borrow();
+        let elem = module_ref
+            .get_elems()
+            .iter()
+            .find(|e| match e.kind {
+                wasmparser::ElementKind::Passive => {
+                    panic!("passive element segment not implemented")
+                }
+                wasmparser::ElementKind::Active { table_index: i, .. } => Some(table_index) == i,
+                wasmparser::ElementKind::Declared => {
+                    panic!("declared element segment not implemented")
+                }
+            })
+            .ok_or_else(|| anyhow!("element segment not found"))?;
+
+        let func_indices = match &elem.items {
+            wasmparser::ElementItems::Functions(r) => r
+                .clone()
+                .into_iter()
+                .map(|i| i.expect("invalid function index"))
+                .collect::<Vec<_>>(),
+            _ => {
+                panic!("Should be function elements in the segment");
+            }
+        };
+
+        let callee_index = func_indices[callee_index_in_table as usize];
+        let callee = module_ref.get_func(callee_index).expect("callee not found");
+
+        // check callee signature
+        let expected_sig = module_ref
+            .get_sig(type_index)
+            .expect("callee signature not found");
+        let actual_sig = callee.get_sig();
+        if expected_sig != actual_sig {
+            panic!("call_indirect: callee signature mismatch");
+        }
+
+        let v = self.call_func(callee.clone());
+        drop(module_ref);
+
+        self.push_operand_stack(v);
+
+        Ok(())
+    }
+
     fn run_global_get(&mut self, global_index: u32) -> Result<()> {
         let module = self.module.borrow();
         let global = module
@@ -402,7 +471,18 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         let value = self.pop_operand_stack().as_i32();
         let base = u32::try_from(self.pop_operand_stack().as_i32())?;
         let effective_addr = align(base + memarg.offset, memarg.align);
-        unimplemented!();
+
+        let mut mem = self.mem.borrow_mut();
+        let mem_size = mem.size();
+
+        if effective_addr + width > mem_size as u32 {
+            return Err(anyhow!("out of bounds memory access"));
+        }
+
+        for i in 0..width {
+            mem.0[(effective_addr + i) as usize] = ((value >> (i * 8)) & 0xFF) as u8;
+        }
+
         Ok(())
     }
 
