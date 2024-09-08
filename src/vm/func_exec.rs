@@ -127,7 +127,13 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                     self.pop_operand_stack();
                     self.inc_pc();
                 }
-                Instruction::Select => todo!(),
+                Instruction::Select => {
+                    let cond = self.pop_operand_stack().as_i32();
+                    let b = self.pop_operand_stack();
+                    let a = self.pop_operand_stack();
+                    self.push_operand_stack(if cond != 0 { a } else { b });
+                    self.inc_pc();
+                }
                 Instruction::LocalGet { local_idx } => {
                     let local = self.locals[local_idx as usize];
                     self.push_operand_stack(local);
