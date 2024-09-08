@@ -477,7 +477,9 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
             .get_mut(global_index as usize)
             .expect("global not found");
 
-        // TODO: check mutability
+        if !global.get_ty().mutable {
+            return Err(anyhow!("global.set: global is not mutable"));
+        }
 
         match global.get_ty().content_type {
             ValType::I32 => {

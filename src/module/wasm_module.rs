@@ -83,10 +83,8 @@ impl<'a> WasmModule<'a> {
                     n_func += 1;
                 }
 
-                // TODO: Implement custom section
-                CustomSection(cread) => { /* ... */ }
-
                 // === The following are not yet implemented ===
+                CustomSection(_) => { /* ... */ }
 
                 // most likely you'd return an error here
                 UnknownSection { .. } => {
