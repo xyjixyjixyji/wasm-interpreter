@@ -661,34 +661,72 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         let b = self.pop_operand_stack().as_i32();
         let a = self.pop_operand_stack().as_i32();
         let result = match i32_binop {
-            I32Binop::Eq => i32::try_from(a == b)?,
-            I32Binop::Ne => i32::try_from(a != b)?,
-            I32Binop::LtS => i32::try_from(a < b)?,
-            I32Binop::LtU => i32::try_from((a as u32) < (b as u32))?,
-            I32Binop::GtS => i32::try_from(a > b)?,
-            I32Binop::GtU => i32::try_from((a as u32) > (b as u32))?,
-            I32Binop::LeS => i32::try_from(a <= b)?,
-            I32Binop::LeU => i32::try_from((a as u32) <= (b as u32))?,
-            I32Binop::GeS => i32::try_from(a >= b)?,
-            I32Binop::GeU => i32::try_from((a as u32) >= (b as u32))?,
-            I32Binop::Add => i32::try_from(a.wrapping_add(b))?,
-            I32Binop::Sub => i32::try_from(a.wrapping_sub(b))?,
-            I32Binop::Mul => i32::try_from(a.wrapping_mul(b))?,
-            I32Binop::DivS => i32::try_from(a.wrapping_div(b))?,
-            I32Binop::DivU => i32::try_from((a as u32).wrapping_div(b as u32))?,
-            I32Binop::RemS => i32::try_from(a.wrapping_rem(b))?,
-            I32Binop::RemU => i32::try_from((a as u32).wrapping_rem(b as u32))?,
-            I32Binop::And => i32::try_from(a & b)?,
-            I32Binop::Or => i32::try_from(a | b)?,
-            I32Binop::Xor => i32::try_from(a ^ b)?,
-            I32Binop::Shl => i32::try_from(a.wrapping_shl((b & 0x1f) as u32))?,
-            I32Binop::ShrS => i32::try_from(a.wrapping_shr((b & 0x1f) as u32))?,
-            I32Binop::ShrU => i32::try_from((a as u32).wrapping_shr((b & 0x1f) as u32))?,
-            I32Binop::Rotl => i32::try_from(a.rotate_left((b & 0x1f) as u32))?,
-            I32Binop::Rotr => i32::try_from(a.rotate_right((b & 0x1f) as u32))?,
-        };
+            I32Binop::Eq => Ok(WasmValue::I32(i32::try_from(a == b)?)),
+            I32Binop::Ne => Ok(WasmValue::I32(i32::try_from(a != b)?)),
+            I32Binop::LtS => Ok(WasmValue::I32(i32::try_from(a < b)?)),
+            I32Binop::LtU => Ok(WasmValue::I32(i32::try_from((a as u32) < (b as u32))?)),
+            I32Binop::GtS => Ok(WasmValue::I32(i32::try_from(a > b)?)),
+            I32Binop::GtU => Ok(WasmValue::I32(i32::try_from((a as u32) > (b as u32))?)),
+            I32Binop::LeS => Ok(WasmValue::I32(i32::try_from(a <= b)?)),
+            I32Binop::LeU => Ok(WasmValue::I32(i32::try_from((a as u32) <= (b as u32))?)),
+            I32Binop::GeS => Ok(WasmValue::I32(i32::try_from(a >= b)?)),
+            I32Binop::GeU => Ok(WasmValue::I32(i32::try_from((a as u32) >= (b as u32))?)),
+            I32Binop::Add => Ok(WasmValue::I32(i32::try_from(a.wrapping_add(b))?)),
+            I32Binop::Sub => Ok(WasmValue::I32(i32::try_from(a.wrapping_sub(b))?)),
+            I32Binop::Mul => Ok(WasmValue::I32(i32::try_from(a.wrapping_mul(b))?)),
+            I32Binop::DivS => {
+                if b == 0 {
+                    Err(anyhow!("division by zero"))
+                } else {
+                    Ok(WasmValue::I32(i32::try_from(a.wrapping_div(b))?))
+                }
+            }
+            I32Binop::DivU => {
+                if b == 0 {
+                    Err(anyhow!("division by zero"))
+                } else {
+                    Ok(WasmValue::I32(i32::try_from(
+                        (a as u32).wrapping_div(b as u32),
+                    )?))
+                }
+            }
+            I32Binop::RemS => {
+                if b == 0 {
+                    Err(anyhow!("division by zero"))
+                } else {
+                    Ok(WasmValue::I32(i32::try_from(a.wrapping_rem(b))?))
+                }
+            }
+            I32Binop::RemU => {
+                if b == 0 {
+                    Err(anyhow!("division by zero"))
+                } else {
+                    Ok(WasmValue::I32(i32::try_from(
+                        (a as u32).wrapping_rem(b as u32),
+                    )?))
+                }
+            }
+            I32Binop::And => Ok(WasmValue::I32(i32::try_from(a & b)?)),
+            I32Binop::Or => Ok(WasmValue::I32(i32::try_from(a | b)?)),
+            I32Binop::Xor => Ok(WasmValue::I32(i32::try_from(a ^ b)?)),
+            I32Binop::Shl => Ok(WasmValue::I32(i32::try_from(
+                a.wrapping_shl((b & 0x1f) as u32),
+            )?)),
+            I32Binop::ShrS => Ok(WasmValue::I32(i32::try_from(
+                a.wrapping_shr((b & 0x1f) as u32),
+            )?)),
+            I32Binop::ShrU => Ok(WasmValue::I32(i32::try_from(
+                (a as u32).wrapping_shr((b & 0x1f) as u32),
+            )?)),
+            I32Binop::Rotl => Ok(WasmValue::I32(i32::try_from(
+                a.rotate_left((b & 0x1f) as u32),
+            )?)),
+            I32Binop::Rotr => Ok(WasmValue::I32(i32::try_from(
+                a.rotate_right((b & 0x1f) as u32),
+            )?)),
+        }?;
 
-        self.push_operand_stack(WasmValue::I32(result));
+        self.push_operand_stack(result);
 
         Ok(())
     }
@@ -729,19 +767,37 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         let b = self.pop_operand_stack().as_f64();
         let a = self.pop_operand_stack().as_f64();
         let result = match f64_binop {
-            F64Binop::Eq => WasmValue::I32(i32::try_from(a == b)?),
-            F64Binop::Ne => WasmValue::I32(i32::try_from(a != b)?),
-            F64Binop::Lt => WasmValue::I32(i32::try_from(a < b)?),
-            F64Binop::Gt => WasmValue::I32(i32::try_from(a > b)?),
-            F64Binop::Le => WasmValue::I32(i32::try_from(a <= b)?),
-            F64Binop::Ge => WasmValue::I32(i32::try_from(a >= b)?),
-            F64Binop::Add => WasmValue::F64(a + b),
-            F64Binop::Sub => WasmValue::F64(a - b),
-            F64Binop::Mul => WasmValue::F64(a * b),
-            F64Binop::Div => WasmValue::F64(a / b),
-            F64Binop::Min => WasmValue::F64(a.min(b)),
-            F64Binop::Max => WasmValue::F64(a.max(b)),
-        };
+            F64Binop::Eq => Ok(WasmValue::I32(i32::try_from(a == b)?)),
+            F64Binop::Ne => Ok(WasmValue::I32(i32::try_from(a != b)?)),
+            F64Binop::Lt => Ok(WasmValue::I32(i32::try_from(a < b)?)),
+            F64Binop::Gt => Ok(WasmValue::I32(i32::try_from(a > b)?)),
+            F64Binop::Le => Ok(WasmValue::I32(i32::try_from(a <= b)?)),
+            F64Binop::Ge => Ok(WasmValue::I32(i32::try_from(a >= b)?)),
+            F64Binop::Add => Ok(WasmValue::F64(a + b)),
+            F64Binop::Sub => Ok(WasmValue::F64(a - b)),
+            F64Binop::Mul => Ok(WasmValue::F64(a * b)),
+            F64Binop::Div => {
+                if b == 0.0 {
+                    Err(anyhow!("division by zero"))
+                } else {
+                    Ok(WasmValue::F64(a / b))
+                }
+            }
+            F64Binop::Min => Ok(WasmValue::F64({
+                if a.is_nan() || b.is_nan() {
+                    f64::NAN
+                } else {
+                    a.min(b)
+                }
+            })),
+            F64Binop::Max => Ok(WasmValue::F64({
+                if a.is_nan() || b.is_nan() {
+                    f64::NAN
+                } else {
+                    a.max(b)
+                }
+            })),
+        }?;
 
         self.push_operand_stack(result);
 
@@ -879,8 +935,6 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         for _ in 0..num_results {
             self.push_operand_stack(result_buf.pop_back().unwrap());
         }
-
-        log::debug!("end of unwinding, stack: {:#?}", self.operand_stack);
     }
 }
 
