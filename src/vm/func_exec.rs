@@ -210,18 +210,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         main_locals: Option<Vec<WasmValue>>,
     ) -> Self {
         let control_flow_table = Self::analyze_control_flow_table(&func, Rc::clone(&module));
-        let mut locals = if let Some(locals) = main_locals {
-            locals
-        } else {
-            vec![]
-        };
-
-        locals.extend(
-            func.get_pure_locals()
-                .iter()
-                .map(|(_, ty)| WasmValue::default_value(ty)),
-        );
-
+        let locals = Self::setup_locals(main_locals, &func);
         Self {
             func,
             pc: Pc(0),
@@ -233,6 +222,19 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         }
     }
 
+    // constructor helpers
+    fn setup_locals(main_locals: Option<Vec<WasmValue>>, func: &FuncDecl) -> Vec<WasmValue> {
+        let mut locals = main_locals.unwrap_or_default();
+
+        locals.extend(func.get_pure_locals().iter().flat_map(|(cnt, ty)| {
+            vec![WasmValue::default_value(ty); usize::try_from(*cnt).expect("local count overflow")]
+        }));
+
+        locals
+    }
+}
+
+impl<'a> WasmFunctionExecutorImpl<'a> {
     pub fn inc_pc(&mut self) {
         self.pc.0 += 1;
     }
@@ -447,13 +449,18 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
 
     fn run_i32_load(&mut self, memarg: &MemArg, width: u32) -> Result<WasmValue> {
         let base = u32::try_from(self.pop_operand_stack().as_i32())?;
-        let effective_addr = align(base + memarg.offset, memarg.align);
+        let effective_addr = base + memarg.offset;
 
         let mem = self.mem.borrow();
         let mem_size = mem.size();
 
         if effective_addr + width > mem_size as u32 {
-            return Err(anyhow!("out of bounds memory access"));
+            return Err(anyhow!(
+                "out of bounds memory access, effective_addr: {}, width: {}, mem_size: {}",
+                effective_addr,
+                width,
+                mem_size
+            ));
         }
 
         // little endian read
@@ -470,13 +477,18 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     fn run_i32_store(&mut self, memarg: &MemArg, width: u32) -> Result<()> {
         let value = self.pop_operand_stack().as_i32();
         let base = u32::try_from(self.pop_operand_stack().as_i32())?;
-        let effective_addr = align(base + memarg.offset, memarg.align);
+        let effective_addr = base + memarg.offset;
 
         let mut mem = self.mem.borrow_mut();
         let mem_size = mem.size();
 
         if effective_addr + width > mem_size as u32 {
-            return Err(anyhow!("out of bounds memory access"));
+            return Err(anyhow!(
+                "out of bounds memory access, effective_addr: {}, width: {}, mem_size: {}",
+                effective_addr,
+                width,
+                mem_size
+            ));
         }
 
         for i in 0..width {
@@ -488,13 +500,18 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
 
     fn run_f64_load(&mut self, memarg: &MemArg) -> Result<WasmValue> {
         let base = u32::try_from(self.pop_operand_stack().as_i32())?;
-        let effective_addr = align(base + memarg.offset, memarg.align);
+        let effective_addr = base + memarg.offset;
 
         let mem = self.mem.borrow();
         let mem_size = mem.size();
 
         if effective_addr + 8 > mem_size as u32 {
-            return Err(anyhow!("out of bounds memory access"));
+            return Err(anyhow!(
+                "out of bounds memory access, effective_addr: {}, width: {}, mem_size: {}",
+                effective_addr,
+                8,
+                mem_size
+            ));
         }
 
         let mut value = 0u64;
@@ -543,9 +560,9 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
             I32Binop::LeU => i32::try_from((a as u32) <= (b as u32))?,
             I32Binop::GeS => i32::try_from(a >= b)?,
             I32Binop::GeU => i32::try_from((a as u32) >= (b as u32))?,
-            I32Binop::Add => i32::try_from(a + b)?,
-            I32Binop::Sub => i32::try_from(a - b)?,
-            I32Binop::Mul => i32::try_from(a * b)?,
+            I32Binop::Add => i32::try_from(a.wrapping_add(b))?,
+            I32Binop::Sub => i32::try_from(a.wrapping_sub(b))?,
+            I32Binop::Mul => i32::try_from(a.wrapping_mul(b))?,
             I32Binop::DivS => todo!(),
             I32Binop::DivU => todo!(),
             I32Binop::RemS => todo!(),
@@ -627,8 +644,4 @@ fn encode_i32leb(v: i32) -> Vec<u8> {
 fn encode_f64(v: f64) -> Vec<u8> {
     let u64 = u64::from_le_bytes(v.to_le_bytes());
     u64.to_le_bytes().to_vec()
-}
-
-fn align(addr: u32, align: u32) -> u32 {
-    (addr + (align - 1)) & !(align - 1)
 }

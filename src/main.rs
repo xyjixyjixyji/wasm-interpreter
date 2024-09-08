@@ -68,7 +68,8 @@ fn main() {
         Ok(r) => {
             print!("{}", r)
         }
-        Err(_) => {
+        Err(e) => {
+            log::debug!("{}", e);
             print!("!trap");
         }
     }

@@ -137,7 +137,8 @@ impl Instructions {
         let mut binary_reader = BinaryReader::new(&code_bytes, 0, WasmFeatures::all());
 
         while !binary_reader.eof() {
-            let opcode = binary_reader.read_var_u32()?;
+            // legal opcodes are u8 operators, so we can just read u8
+            let opcode = binary_reader.read_u8()? as u32;
             match opcode {
                 WASM_OP_UNREACHABLE => insts.push(Instructions::Unreachable),
                 WASM_OP_NOP => insts.push(Instructions::Nop),
@@ -326,8 +327,8 @@ impl Instructions {
     }
 
     fn read_memarg(binary_reader: &mut BinaryReader) -> Result<MemArg> {
-        let offset = binary_reader.read_var_u32()?;
         let align = binary_reader.read_var_u32()?;
+        let offset = binary_reader.read_var_u32()?;
         Ok(MemArg { offset, align })
     }
 }

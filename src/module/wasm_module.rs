@@ -145,6 +145,10 @@ impl<'a> WasmModule<'a> {
         self.data_count
     }
 
+    pub fn get_datas(&self) -> &Vec<Data<'a>> {
+        &self.datas
+    }
+
     pub fn get_memory(&self) -> Option<&MemoryType> {
         self.mems.first()
     }
