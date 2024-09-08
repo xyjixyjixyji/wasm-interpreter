@@ -767,7 +767,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         let b = self.pop_operand_stack().as_f64();
         let a = self.pop_operand_stack().as_f64();
         let result = match f64_binop {
-            F64Binop::Eq => Ok(WasmValue::I32(i32::try_from(a == b)?)),
+            F64Binop::Eq => Ok::<WasmValue, anyhow::Error>(WasmValue::I32(i32::try_from(a == b)?)),
             F64Binop::Ne => Ok(WasmValue::I32(i32::try_from(a != b)?)),
             F64Binop::Lt => Ok(WasmValue::I32(i32::try_from(a < b)?)),
             F64Binop::Gt => Ok(WasmValue::I32(i32::try_from(a > b)?)),
@@ -778,7 +778,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
             F64Binop::Mul => Ok(WasmValue::F64(a * b)),
             F64Binop::Div => {
                 if b == 0.0 {
-                    Err(anyhow!("division by zero"))
+                    Ok(WasmValue::F64(f64::INFINITY))
                 } else {
                     Ok(WasmValue::F64(a / b))
                 }
