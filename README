@@ -1,0 +1,12 @@
+# Wasm Interpreter
+
+This is a course project for CMU 17770, Virtual Machines and Managed Runtimes.
+This codebase contains code for a Wasm Interpreter in pure Rust, the internal
+data type only suppoers i32, f64 and opaque types(Refs). It also only supports
+limited number of instructions, but mainly major ones.
+
+Moreover, Passive elements are not supported and custom section is not implemented.
+
+## TODO
+1. More comprehensive tests
+2. Covers more types
