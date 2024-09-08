@@ -642,17 +642,17 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     fn run_i32_unop(&mut self, i32_unop: &I32Unop) -> Result<()> {
         let a = self.pop_operand_stack().as_i32();
         let result = match i32_unop {
-            I32Unop::Eqz => i32::try_from(a == 0)?,
-            I32Unop::Clz => i32::try_from(a.leading_zeros())?,
-            I32Unop::Ctz => i32::try_from(a.trailing_zeros())?,
-            I32Unop::Popcnt => i32::try_from(a.count_ones())?,
-            I32Unop::Extend8S => todo!(),
-            I32Unop::Extend16S => todo!(),
-            I32Unop::F64ConvertI32S => todo!(),
-            I32Unop::F64ConvertI32U => todo!(),
-        };
+            I32Unop::Eqz => Ok::<WasmValue, anyhow::Error>(WasmValue::I32(i32::try_from(a == 0)?)),
+            I32Unop::Clz => Ok(WasmValue::I32(i32::try_from(a.leading_zeros())?)),
+            I32Unop::Ctz => Ok(WasmValue::I32(i32::try_from(a.trailing_zeros())?)),
+            I32Unop::Popcnt => Ok(WasmValue::I32(i32::try_from(a.count_ones())?)),
+            I32Unop::Extend8S => Ok(WasmValue::I32(i32::try_from(a as i8 as i32)?)),
+            I32Unop::Extend16S => Ok(WasmValue::I32(i32::try_from(a as i16 as i32)?)),
+            I32Unop::F64ConvertI32S => Ok(WasmValue::F64(f64::from(a))),
+            I32Unop::F64ConvertI32U => Ok(WasmValue::F64(f64::from(a as u32))),
+        }?;
 
-        self.push_operand_stack(WasmValue::I32(result));
+        self.push_operand_stack(result);
 
         Ok(())
     }
@@ -674,18 +674,18 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
             I32Binop::Add => i32::try_from(a.wrapping_add(b))?,
             I32Binop::Sub => i32::try_from(a.wrapping_sub(b))?,
             I32Binop::Mul => i32::try_from(a.wrapping_mul(b))?,
-            I32Binop::DivS => todo!(),
-            I32Binop::DivU => todo!(),
-            I32Binop::RemS => todo!(),
-            I32Binop::RemU => todo!(),
+            I32Binop::DivS => i32::try_from(a.wrapping_div(b))?,
+            I32Binop::DivU => i32::try_from((a as u32).wrapping_div(b as u32))?,
+            I32Binop::RemS => i32::try_from(a.wrapping_rem(b))?,
+            I32Binop::RemU => i32::try_from((a as u32).wrapping_rem(b as u32))?,
             I32Binop::And => i32::try_from(a & b)?,
             I32Binop::Or => i32::try_from(a | b)?,
             I32Binop::Xor => i32::try_from(a ^ b)?,
             I32Binop::Shl => i32::try_from(a.wrapping_shl((b & 0x1f) as u32))?,
-            I32Binop::ShrS => todo!(),
-            I32Binop::ShrU => todo!(),
-            I32Binop::Rotl => todo!(),
-            I32Binop::Rotr => todo!(),
+            I32Binop::ShrS => i32::try_from(a.wrapping_shr((b & 0x1f) as u32))?,
+            I32Binop::ShrU => i32::try_from((a as u32).wrapping_shr((b & 0x1f) as u32))?,
+            I32Binop::Rotl => i32::try_from(a.rotate_left((b & 0x1f) as u32))?,
+            I32Binop::Rotr => i32::try_from(a.rotate_right((b & 0x1f) as u32))?,
         };
 
         self.push_operand_stack(WasmValue::I32(result));
@@ -696,16 +696,30 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     fn run_f64_unop(&mut self, f64_unop: &F64Unop) -> Result<()> {
         let a = self.pop_operand_stack().as_f64();
         let result = match f64_unop {
-            F64Unop::Neg => WasmValue::F64(-a),
-            F64Unop::Abs => WasmValue::F64(a.abs()),
-            F64Unop::Ceil => WasmValue::F64(a.ceil()),
-            F64Unop::Floor => WasmValue::F64(a.floor()),
-            F64Unop::Trunc => WasmValue::F64(a.trunc()),
-            F64Unop::Nearest => WasmValue::F64(a.round()),
-            F64Unop::Sqrt => WasmValue::F64(a.sqrt()),
-            F64Unop::I32TruncF64S => todo!(),
-            F64Unop::I32TruncF64U => todo!(),
-        };
+            F64Unop::Neg => Ok(WasmValue::F64(-a)),
+            F64Unop::Abs => Ok(WasmValue::F64(a.abs())),
+            F64Unop::Ceil => Ok(WasmValue::F64(a.ceil())),
+            F64Unop::Floor => Ok(WasmValue::F64(a.floor())),
+            F64Unop::Trunc => Ok(WasmValue::F64(a.trunc())),
+            F64Unop::Nearest => Ok(WasmValue::F64(a.round())),
+            F64Unop::Sqrt => Ok(WasmValue::F64(a.sqrt())),
+            F64Unop::I32TruncF64S => {
+                let f = a.trunc();
+                if f.is_nan() || f < (i32::MIN as f64) || f > (i32::MAX as f64) || f.is_infinite() {
+                    Err(anyhow!("f64.trunc_s: value out of range"))
+                } else {
+                    Ok(WasmValue::I32(f as i32))
+                }
+            }
+            F64Unop::I32TruncF64U => {
+                let f = a.trunc();
+                if f.is_nan() || f < 0.0 || f > (i32::MAX as f64) || f.is_infinite() {
+                    Err(anyhow!("f64.trunc_u: value out of range"))
+                } else {
+                    Ok(WasmValue::I32((f as u32) as i32))
+                }
+            }
+        }?;
 
         self.push_operand_stack(result);
         Ok(())
