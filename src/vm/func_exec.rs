@@ -4,6 +4,7 @@ use log::debug;
 use wasmparser::{BinaryReader, BlockType, ConstExpr, ValType, WasmFeatures};
 
 use std::{
+    clone,
     collections::{HashMap, VecDeque},
     rc::Rc,
 };
@@ -30,11 +31,14 @@ pub(super) enum BlockControlFlowType {
 }
 
 /// Control flow frame for a code block, start with Block, If, Loop, etc.
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct BlockControlFlowFrame {
     /// Could be If, Else, Block, Loop, etc.
     pub(super) control_type: BlockControlFlowType,
     /// the height of the stack that expected when the block ends, for unwinding
     pub(super) expected_stack_height: usize,
+    /// The number of results in the block, for unwinding
+    pub(super) num_results: usize,
     /// Program counter where the block starts
     pub(super) start_pc: Pc,
     /// Program counter of the `end` instruction for the block
@@ -64,8 +68,9 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
         self.control_flow_frames.push_back(BlockControlFlowFrame {
             control_type: BlockControlFlowType::Block,
             expected_stack_height: 0,
+            num_results: self.func.get_sig().results().len(),
             start_pc: 0,
-            end_pc: Self::find_matching_end(&self.func.get_insts(), 0)?,
+            end_pc: self.func.get_insts().len() - 1,
         });
 
         let mut done_exec = false;
@@ -105,10 +110,18 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                     self.inc_pc();
                 }
                 Instruction::End => {
+                    self.control_flow_frames.pop_back();
                     self.inc_pc();
                 }
-                Instruction::Br { rel_depth } => todo!(),
-                Instruction::BrIf { rel_depth } => todo!(),
+                Instruction::Br { rel_depth } => {
+                    self.run_br(rel_depth)?;
+                }
+                Instruction::BrIf { rel_depth } => {
+                    let cond_met = self.run_br_if(rel_depth)?;
+                    if !cond_met {
+                        self.inc_pc();
+                    }
+                }
                 Instruction::BrTable { table } => todo!(),
                 Instruction::Call { func_idx } => {
                     let func = self.module.borrow().get_func(func_idx).unwrap().clone();
@@ -684,6 +697,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         let frame = BlockControlFlowFrame {
             control_type: BlockControlFlowType::Block,
             expected_stack_height,
+            num_results: self.num_results(block_type),
             start_pc: self.pc,
             end_pc: Self::find_matching_end(insts, self.pc)?,
         };
@@ -706,6 +720,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
                 condition_met: cond != 0,
             },
             expected_stack_height,
+            num_results: self.num_results(block_type),
             start_pc: self.pc,
             end_pc: Self::find_matching_end(insts, self.pc)?,
         };
@@ -713,6 +728,65 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         self.control_flow_frames.push_back(frame);
 
         Ok(())
+    }
+
+    fn run_br(&mut self, rel_depth: u32) -> Result<()> {
+        let target_depth = rel_depth as usize;
+        let stack_depth = self.control_flow_frames.len();
+
+        if target_depth >= stack_depth {
+            return Err(anyhow!("br: invalid depth"));
+        }
+
+        let target_frame = self.control_flow_frames[stack_depth - 1 - target_depth].clone();
+        let expected_stack_height = target_frame.expected_stack_height;
+        let num_results = target_frame.num_results;
+
+        self.unwind_stack(expected_stack_height, num_results);
+
+        match target_frame.control_type {
+            BlockControlFlowType::Block | BlockControlFlowType::If { .. } => {
+                self.set_pc(target_frame.end_pc);
+
+                // truncate the control flow frames **excluding** the target frame, the
+                // current frame will be pop on the *end* of the control flow
+                self.control_flow_frames
+                    .truncate(stack_depth - target_depth);
+            }
+            BlockControlFlowType::Loop => {
+                unimplemented!();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Run the br_if instruction, return true if the condition is met, false otherwise
+    fn run_br_if(&mut self, rel_depth: u32) -> Result<bool> {
+        let cond = self.pop_operand_stack().as_i32();
+        if cond == 0 {
+            Ok(false)
+        } else {
+            self.run_br(rel_depth)?;
+            Ok(true)
+        }
+    }
+
+    /// Unwind the stack to the expected stack height, but we have to keep the result
+    /// in the stack.
+    fn unwind_stack(&mut self, expected_stack_height: usize, num_results: usize) {
+        let mut result_buf = VecDeque::new();
+        for _ in 0..num_results {
+            result_buf.push_back(self.pop_operand_stack());
+        }
+
+        while self.operand_stack.len() > expected_stack_height.saturating_sub(num_results) {
+            self.pop_operand_stack();
+        }
+
+        for _ in 0..num_results {
+            self.push_operand_stack(result_buf.pop_back().unwrap());
+        }
     }
 }
 
@@ -788,6 +862,18 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
                 let nparams = func.get_sig().params().len();
                 let nresults = func.get_sig().results().len();
                 nresults - nparams
+            }
+        }
+    }
+
+    fn num_results(&self, block_type: BlockType) -> usize {
+        match block_type {
+            BlockType::Empty => 0,
+            BlockType::Type(_) => 0,
+            BlockType::FuncType(f) => {
+                let module = self.module.borrow();
+                let func = module.get_func(f).expect("function not found");
+                func.get_sig().results().len()
             }
         }
     }
