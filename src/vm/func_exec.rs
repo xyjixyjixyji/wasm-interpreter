@@ -1,18 +1,13 @@
 use anyhow::{anyhow, Result};
 use debug_cell::RefCell;
-use log::debug;
-use wasmparser::{BinaryReader, BlockType, ConstExpr, ValType, WasmFeatures};
+use wasmparser::{BinaryReader, BlockType, ValType, WasmFeatures};
 
-use std::{
-    clone,
-    collections::{HashMap, VecDeque},
-    rc::Rc,
-};
+use std::{collections::VecDeque, rc::Rc};
 
 use super::{interpreter::LinearMemory, WasmFunctionExecutor};
 use crate::module::{
     components::FuncDecl,
-    insts::{F64Binop, F64Unop, I32Binop, I32Unop, Instruction, MemArg},
+    insts::{BrTable, F64Binop, F64Unop, I32Binop, I32Unop, Instruction, MemArg},
     value_type::WasmValue,
     wasm_module::WasmModule,
     wasmops::{WASM_OP_END, WASM_OP_F64_CONST, WASM_OP_I32_CONST},
@@ -122,7 +117,9 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                         self.inc_pc();
                     }
                 }
-                Instruction::BrTable { table } => todo!(),
+                Instruction::BrTable { table } => {
+                    self.run_br_table(&table)?;
+                }
                 Instruction::Call { func_idx } => {
                     let func = self.module.borrow().get_func(func_idx).unwrap().clone();
                     let v = self.call_func(func);
@@ -356,20 +353,42 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         let callee_index_in_table = self.pop_operand_stack().as_i32();
 
         let module_ref = self.module.borrow();
+
+        // get the corresponding element segment for the funcref table
         let elem = module_ref
             .get_elems()
             .iter()
-            .find(|e| match e.kind {
+            .find(|e| match &e.kind {
                 wasmparser::ElementKind::Passive => {
                     panic!("passive element segment not implemented")
                 }
-                wasmparser::ElementKind::Active { table_index: i, .. } => Some(table_index) == i,
+                wasmparser::ElementKind::Active {
+                    table_index: i,
+                    offset_expr,
+                } => {
+                    if let Some(idx) = i {
+                        *idx == table_index
+                    } else {
+                        // parse the offset expression
+                        let mut reader = offset_expr.get_binary_reader();
+                        let op = reader.read_u8().expect(
+                            "invalid offset expression when parsing opcode, should be i32.const",
+                        );
+                        if op as u32 != WASM_OP_I32_CONST {
+                            panic!("invalid offset expression when parsing opcode, should be i32.const, op: {}", op);
+                        }
+                        reader
+                            .read_var_i32()
+                            .expect("invalid offset expression when parsing value of i32.const") as u32 == table_index
+                    }
+                }
                 wasmparser::ElementKind::Declared => {
                     panic!("declared element segment not implemented")
                 }
             })
             .ok_or_else(|| anyhow!("element segment not found"))?;
 
+        // get the callee which we want to call
         let func_indices = match &elem.items {
             wasmparser::ElementItems::Functions(r) => r
                 .clone()
@@ -380,25 +399,26 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
                 panic!("Should be function elements in the segment");
             }
         };
-
-        let callee_index = func_indices[callee_index_in_table as usize];
+        let callee_index = func_indices
+            .get(callee_index_in_table as usize)
+            .ok_or_else(|| anyhow!("callee index not found"))?;
         let callee = module_ref
-            .get_func(callee_index)
+            .get_func(*callee_index)
             .expect("callee not found")
             .clone();
 
-        // check callee signature
+        // check callee signature, make sure it matches the expected signature
         let expected_sig = module_ref
             .get_sig(type_index)
             .expect("callee signature not found");
         let actual_sig = callee.get_sig();
         if expected_sig != actual_sig {
-            panic!("call_indirect: callee signature mismatch");
+            return Err(anyhow!("call_indirect: callee signature mismatch"));
         }
         drop(module_ref);
 
+        // call it and push the result to the operand stack
         let v = self.call_func(callee.clone());
-
         self.push_operand_stack(v);
 
         Ok(())
@@ -591,7 +611,28 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     }
 
     fn run_f64_store(&mut self, memarg: &MemArg) -> Result<()> {
-        unimplemented!()
+        let value = self.pop_operand_stack().as_f64();
+        let base = u32::try_from(self.pop_operand_stack().as_i32())?;
+        let effective_addr = base + memarg.offset;
+
+        let mut mem = self.mem.borrow_mut();
+        let mem_size = mem.size();
+
+        if effective_addr + 8 > mem_size as u32 {
+            return Err(anyhow!(
+                "out of bounds memory access, effective_addr: {}, width: {}, mem_size: {}",
+                effective_addr,
+                8,
+                mem_size
+            ));
+        }
+
+        let value = value.to_le_bytes();
+        for i in 0..8 {
+            mem.0[(effective_addr + i) as usize] = value[i as usize];
+        }
+
+        Ok(())
     }
 
     fn run_i32_unop(&mut self, i32_unop: &I32Unop) -> Result<()> {
@@ -770,6 +811,17 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
             self.run_br(rel_depth)?;
             Ok(true)
         }
+    }
+
+    fn run_br_table(&mut self, table: &BrTable) -> Result<()> {
+        let index = self.pop_operand_stack().as_i32();
+        if index < 0 || index >= table.targets.len() as i32 {
+            self.run_br(table.default_target)?;
+        } else {
+            self.run_br(table.targets[index as usize])?;
+        }
+
+        Ok(())
     }
 
     /// Unwind the stack to the expected stack height, but we have to keep the result

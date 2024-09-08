@@ -5,8 +5,8 @@ use super::wasmops::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrTable {
-    targets: Vec<u32>,
-    default_target: u32,
+    pub targets: Vec<u32>,
+    pub default_target: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -313,6 +313,7 @@ impl Instruction {
         if is_neg {
             // singular type
             if b == 0x40 {
+                binary_reader.read_u8()?;
                 Ok(BlockType::Empty)
             } else {
                 Ok(BlockType::Type(binary_reader.read()?))
