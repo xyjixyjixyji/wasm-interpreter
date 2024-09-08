@@ -246,9 +246,9 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         func: FuncDecl,
         module: Rc<RefCell<WasmModule<'a>>>,
         mem: Rc<RefCell<LinearMemory>>,
-        main_locals: Option<Vec<WasmValue>>,
+        init_locals: Option<Vec<WasmValue>>,
     ) -> Self {
-        let locals = Self::setup_locals(main_locals, &func);
+        let locals = Self::setup_locals(init_locals, &func);
         Self {
             func,
             pc: 0,
@@ -299,13 +299,32 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         self.mem.borrow_mut().grow(additional_pages);
     }
 
-    pub fn call_func(&self, func: FuncDecl) -> WasmValue {
-        // TODO: push the stack value to the local variables
+    pub fn call_func(&mut self, func: FuncDecl) -> WasmValue {
+        // prepare the argument locals
+        let mut args = VecDeque::new();
+        for param in func.get_sig().params().iter().rev() {
+            let v = self.pop_operand_stack();
+            match param {
+                ValType::I32 => {
+                    if !matches!(v, WasmValue::I32(_)) {
+                        panic!("call_func: invalid argument type");
+                    }
+                }
+                ValType::F64 => {
+                    if !matches!(v, WasmValue::F64(_)) {
+                        panic!("call_func: invalid argument type");
+                    }
+                }
+                _ => panic!("unsupported param type"),
+            }
+            args.push_front(v);
+        }
+
         let mut executor = WasmFunctionExecutorImpl::new(
             func,
             Rc::clone(&self.module),
             Rc::clone(&self.mem),
-            None,
+            Some(args.into()),
         );
 
         executor.execute().unwrap()
@@ -344,7 +363,10 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         };
 
         let callee_index = func_indices[callee_index_in_table as usize];
-        let callee = module_ref.get_func(callee_index).expect("callee not found");
+        let callee = module_ref
+            .get_func(callee_index)
+            .expect("callee not found")
+            .clone();
 
         // check callee signature
         let expected_sig = module_ref
@@ -354,9 +376,9 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         if expected_sig != actual_sig {
             panic!("call_indirect: callee signature mismatch");
         }
+        drop(module_ref);
 
         let v = self.call_func(callee.clone());
-        drop(module_ref);
 
         self.push_operand_stack(v);
 
