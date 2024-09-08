@@ -6,11 +6,11 @@ pub enum WasmValue {
     F64(f64),
 }
 
-impl ToString for WasmValue {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for WasmValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WasmValue::I32(val) => val.to_string(),
-            WasmValue::F64(val) => format!("{:.6}", val),
+            WasmValue::I32(val) => write!(f, "{}", val),
+            WasmValue::F64(val) => write!(f, "{:.6}", val),
         }
     }
 }

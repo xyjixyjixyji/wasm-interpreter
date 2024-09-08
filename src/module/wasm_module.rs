@@ -125,14 +125,6 @@ impl<'a> WasmModule<'a> {
         self.sigs.get(index as usize)
     }
 
-    pub fn get_table(&self, index: u32) -> Option<&Table<'a>> {
-        self.tables.get(index as usize)
-    }
-
-    pub fn get_imports(&self) -> &ImportSet<'a> {
-        &self.imports
-    }
-
     pub fn get_num_imports(&self) -> usize {
         self.imports.get_num_imports()
     }

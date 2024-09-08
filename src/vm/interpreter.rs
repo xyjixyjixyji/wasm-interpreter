@@ -69,14 +69,6 @@ impl<'a> WasmInterpreter<'a> {
             mem: Rc::new(RefCell::new(mem)),
         }
     }
-
-    pub fn mem_size(&self) -> usize {
-        self.mem.borrow().size()
-    }
-
-    pub fn grow_mem(&mut self, additional_pages: u32) {
-        self.mem.borrow_mut().grow(additional_pages);
-    }
 }
 
 impl<'a> WasmInterpreter<'a> {

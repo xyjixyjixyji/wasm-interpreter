@@ -1,5 +1,5 @@
 use anyhow::Result;
-use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Table, ValType};
+use wasmparser::{Data, Element, Export, FuncType, MemoryType, Table, ValType};
 
 use super::{
     components::{FuncDecl, GlobalDecl, ImportSet},

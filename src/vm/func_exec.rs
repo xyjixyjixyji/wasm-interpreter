@@ -642,12 +642,12 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     fn run_i32_unop(&mut self, i32_unop: &I32Unop) -> Result<()> {
         let a = self.pop_operand_stack().as_i32();
         let result = match i32_unop {
-            I32Unop::Eqz => Ok::<WasmValue, anyhow::Error>(WasmValue::I32(i32::try_from(a == 0)?)),
+            I32Unop::Eqz => Ok::<WasmValue, anyhow::Error>(WasmValue::I32((a == 0) as i32)),
             I32Unop::Clz => Ok(WasmValue::I32(i32::try_from(a.leading_zeros())?)),
             I32Unop::Ctz => Ok(WasmValue::I32(i32::try_from(a.trailing_zeros())?)),
             I32Unop::Popcnt => Ok(WasmValue::I32(i32::try_from(a.count_ones())?)),
-            I32Unop::Extend8S => Ok(WasmValue::I32(i32::try_from(a as i8 as i32)?)),
-            I32Unop::Extend16S => Ok(WasmValue::I32(i32::try_from(a as i16 as i32)?)),
+            I32Unop::Extend8S => Ok(WasmValue::I32(a as i8 as i32)),
+            I32Unop::Extend16S => Ok(WasmValue::I32(a as i16 as i32)),
             I32Unop::F64ConvertI32S => Ok(WasmValue::F64(f64::from(a))),
             I32Unop::F64ConvertI32U => Ok(WasmValue::F64(f64::from(a as u32))),
         }?;
@@ -661,24 +661,24 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         let b = self.pop_operand_stack().as_i32();
         let a = self.pop_operand_stack().as_i32();
         let result = match i32_binop {
-            I32Binop::Eq => Ok(WasmValue::I32(i32::try_from(a == b)?)),
-            I32Binop::Ne => Ok(WasmValue::I32(i32::try_from(a != b)?)),
-            I32Binop::LtS => Ok(WasmValue::I32(i32::try_from(a < b)?)),
-            I32Binop::LtU => Ok(WasmValue::I32(i32::try_from((a as u32) < (b as u32))?)),
-            I32Binop::GtS => Ok(WasmValue::I32(i32::try_from(a > b)?)),
-            I32Binop::GtU => Ok(WasmValue::I32(i32::try_from((a as u32) > (b as u32))?)),
-            I32Binop::LeS => Ok(WasmValue::I32(i32::try_from(a <= b)?)),
-            I32Binop::LeU => Ok(WasmValue::I32(i32::try_from((a as u32) <= (b as u32))?)),
-            I32Binop::GeS => Ok(WasmValue::I32(i32::try_from(a >= b)?)),
-            I32Binop::GeU => Ok(WasmValue::I32(i32::try_from((a as u32) >= (b as u32))?)),
-            I32Binop::Add => Ok(WasmValue::I32(i32::try_from(a.wrapping_add(b))?)),
-            I32Binop::Sub => Ok(WasmValue::I32(i32::try_from(a.wrapping_sub(b))?)),
-            I32Binop::Mul => Ok(WasmValue::I32(i32::try_from(a.wrapping_mul(b))?)),
+            I32Binop::Eq => Ok(WasmValue::I32((a == b) as i32)),
+            I32Binop::Ne => Ok(WasmValue::I32((a != b) as i32)),
+            I32Binop::LtS => Ok(WasmValue::I32((a < b) as i32)),
+            I32Binop::LtU => Ok(WasmValue::I32(((a as u32) < (b as u32)) as i32)),
+            I32Binop::GtS => Ok(WasmValue::I32((a > b) as i32)),
+            I32Binop::GtU => Ok(WasmValue::I32(((a as u32) > (b as u32)) as i32)),
+            I32Binop::LeS => Ok(WasmValue::I32((a <= b) as i32)),
+            I32Binop::LeU => Ok(WasmValue::I32(((a as u32) <= (b as u32)) as i32)),
+            I32Binop::GeS => Ok(WasmValue::I32((a >= b) as i32)),
+            I32Binop::GeU => Ok(WasmValue::I32(((a as u32) >= (b as u32)) as i32)),
+            I32Binop::Add => Ok(WasmValue::I32(a.wrapping_add(b))),
+            I32Binop::Sub => Ok(WasmValue::I32(a.wrapping_sub(b))),
+            I32Binop::Mul => Ok(WasmValue::I32(a.wrapping_mul(b))),
             I32Binop::DivS => {
                 if b == 0 {
                     Err(anyhow!("division by zero"))
                 } else {
-                    Ok(WasmValue::I32(i32::try_from(a.wrapping_div(b))?))
+                    Ok(WasmValue::I32(a.wrapping_div(b)))
                 }
             }
             I32Binop::DivU => {
@@ -694,7 +694,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
                 if b == 0 {
                     Err(anyhow!("division by zero"))
                 } else {
-                    Ok(WasmValue::I32(i32::try_from(a.wrapping_rem(b))?))
+                    Ok(WasmValue::I32(a.wrapping_rem(b)))
                 }
             }
             I32Binop::RemU => {
@@ -706,24 +706,16 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
                     )?))
                 }
             }
-            I32Binop::And => Ok(WasmValue::I32(i32::try_from(a & b)?)),
-            I32Binop::Or => Ok(WasmValue::I32(i32::try_from(a | b)?)),
-            I32Binop::Xor => Ok(WasmValue::I32(i32::try_from(a ^ b)?)),
-            I32Binop::Shl => Ok(WasmValue::I32(i32::try_from(
-                a.wrapping_shl((b & 0x1f) as u32),
-            )?)),
-            I32Binop::ShrS => Ok(WasmValue::I32(i32::try_from(
-                a.wrapping_shr((b & 0x1f) as u32),
-            )?)),
+            I32Binop::And => Ok(WasmValue::I32(a & b)),
+            I32Binop::Or => Ok(WasmValue::I32(a | b)),
+            I32Binop::Xor => Ok(WasmValue::I32(a ^ b)),
+            I32Binop::Shl => Ok(WasmValue::I32(a.wrapping_shl((b & 0x1f) as u32))),
+            I32Binop::ShrS => Ok(WasmValue::I32(a.wrapping_shr((b & 0x1f) as u32))),
             I32Binop::ShrU => Ok(WasmValue::I32(i32::try_from(
                 (a as u32).wrapping_shr((b & 0x1f) as u32),
             )?)),
-            I32Binop::Rotl => Ok(WasmValue::I32(i32::try_from(
-                a.rotate_left((b & 0x1f) as u32),
-            )?)),
-            I32Binop::Rotr => Ok(WasmValue::I32(i32::try_from(
-                a.rotate_right((b & 0x1f) as u32),
-            )?)),
+            I32Binop::Rotl => Ok(WasmValue::I32(a.rotate_left((b & 0x1f) as u32))),
+            I32Binop::Rotr => Ok(WasmValue::I32(a.rotate_right((b & 0x1f) as u32))),
         }?;
 
         self.push_operand_stack(result);
@@ -767,12 +759,12 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         let b = self.pop_operand_stack().as_f64();
         let a = self.pop_operand_stack().as_f64();
         let result = match f64_binop {
-            F64Binop::Eq => Ok::<WasmValue, anyhow::Error>(WasmValue::I32(i32::try_from(a == b)?)),
-            F64Binop::Ne => Ok(WasmValue::I32(i32::try_from(a != b)?)),
-            F64Binop::Lt => Ok(WasmValue::I32(i32::try_from(a < b)?)),
-            F64Binop::Gt => Ok(WasmValue::I32(i32::try_from(a > b)?)),
-            F64Binop::Le => Ok(WasmValue::I32(i32::try_from(a <= b)?)),
-            F64Binop::Ge => Ok(WasmValue::I32(i32::try_from(a >= b)?)),
+            F64Binop::Eq => Ok::<WasmValue, anyhow::Error>(WasmValue::I32((a == b) as i32)),
+            F64Binop::Ne => Ok(WasmValue::I32((a != b) as i32)),
+            F64Binop::Lt => Ok(WasmValue::I32((a < b) as i32)),
+            F64Binop::Gt => Ok(WasmValue::I32((a > b) as i32)),
+            F64Binop::Le => Ok(WasmValue::I32((a <= b) as i32)),
+            F64Binop::Ge => Ok(WasmValue::I32((a >= b) as i32)),
             F64Binop::Add => Ok(WasmValue::F64(a + b)),
             F64Binop::Sub => Ok(WasmValue::F64(a - b)),
             F64Binop::Mul => Ok(WasmValue::F64(a * b)),
@@ -1035,7 +1027,7 @@ fn encode_i32leb(v: i32) -> Vec<u8> {
     while b & 0x80 != 0 {
         b = (val & 0x7F) as u8;
         val >>= 7;
-        if !(((val == 0) && !(b & 0x40 != 0)) || ((val == -1) && (b & 0x40 != 0))) {
+        if !(((val == 0) && (b & 0x40 == 0)) || ((val == -1) && (b & 0x40 != 0))) {
             b |= 0x80;
         }
         buf.push(b);
