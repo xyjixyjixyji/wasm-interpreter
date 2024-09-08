@@ -865,6 +865,8 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         for _ in 0..num_results {
             self.push_operand_stack(result_buf.pop_back().unwrap());
         }
+
+        log::debug!("end of unwinding, stack: {:#?}", self.operand_stack);
     }
 }
 
@@ -947,7 +949,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     fn num_results(&self, block_type: BlockType) -> usize {
         match block_type {
             BlockType::Empty => 0,
-            BlockType::Type(_) => 0,
+            BlockType::Type(_) => 1,
             BlockType::FuncType(f) => {
                 let module = self.module.borrow();
                 let func = module.get_func(f).expect("function not found");
