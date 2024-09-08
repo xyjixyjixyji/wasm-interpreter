@@ -92,7 +92,11 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                     self.run_block(&insts, ty)?;
                     self.inc_pc();
                 }
-                Instruction::Loop { ty } => todo!(),
+                Instruction::Loop { ty } => {
+                    let insts = self.func.get_insts().clone();
+                    self.run_loop(&insts, ty)?;
+                    self.inc_pc();
+                }
                 Instruction::If { ty } => {
                     let insts = self.func.get_insts().clone();
                     self.run_if(&insts, ty)?;
@@ -748,6 +752,23 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         Ok(())
     }
 
+    fn run_loop(&mut self, insts: &[Instruction], block_type: BlockType) -> Result<()> {
+        let mut expected_stack_height = self.operand_stack.len();
+        expected_stack_height += self.stack_height_delta(block_type);
+
+        let frame = BlockControlFlowFrame {
+            control_type: BlockControlFlowType::Loop,
+            expected_stack_height,
+            num_results: self.num_results(block_type),
+            start_pc: self.pc,
+            end_pc: Self::find_matching_end(insts, self.pc)?,
+        };
+
+        self.control_flow_frames.push_back(frame);
+
+        Ok(())
+    }
+
     /// Run the if instruction, return true if the condition is met, false otherwise
     fn run_if(&mut self, insts: &[Instruction], block_type: BlockType) -> Result<()> {
         let mut expected_stack_height = self.operand_stack.len();
@@ -795,7 +816,12 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
                     .truncate(stack_depth - target_depth);
             }
             BlockControlFlowType::Loop => {
-                unimplemented!();
+                self.set_pc(target_frame.start_pc);
+
+                // truncate the control flow frames **incluing** the target frame, the
+                // this is because we will add the control flow frame again when the loop start
+                self.control_flow_frames
+                    .truncate(stack_depth - target_depth - 1);
             }
         }
 
