@@ -3,13 +3,13 @@ use wasmparser::{Data, Element, Export, FuncType, Global, MemoryType, Table, Val
 
 use super::{
     components::{FuncDecl, GlobalDecl, ImportSet},
-    insts::Instructions,
+    insts::Instruction,
     wasm_module::WasmModule,
 };
 
 pub(crate) struct FuncBody {
     pub(crate) locals: Vec<(u32, ValType)>,
-    pub(crate) insts: Vec<Instructions>,
+    pub(crate) insts: Vec<Instruction>,
 }
 
 impl<'a> WasmModule<'a> {
@@ -185,7 +185,7 @@ impl<'a> WasmModule<'a> {
             .read_bytes(binary_reader.bytes_remaining())?
             .to_vec();
 
-        let insts = Instructions::from_code_bytes(code_bytes)?;
+        let insts = Instruction::from_code_bytes(code_bytes)?;
 
         Ok(FuncBody { locals, insts })
     }

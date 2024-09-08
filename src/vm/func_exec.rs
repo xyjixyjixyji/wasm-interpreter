@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use debug_cell::RefCell;
 use log::debug;
-use wasmparser::{BinaryReader, ConstExpr, ValType, WasmFeatures};
+use wasmparser::{BinaryReader, BlockType, ConstExpr, ValType, WasmFeatures};
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -11,22 +11,34 @@ use std::{
 use super::{interpreter::LinearMemory, WasmFunctionExecutor};
 use crate::module::{
     components::FuncDecl,
-    insts::{F64Binop, F64Unop, I32Binop, I32Unop, Instructions, MemArg},
+    insts::{F64Binop, F64Unop, I32Binop, I32Unop, Instruction, MemArg},
     value_type::WasmValue,
     wasm_module::WasmModule,
     wasmops::{WASM_OP_END, WASM_OP_F64_CONST, WASM_OP_I32_CONST},
 };
 
-struct Pc(usize);
+type Pc = usize;
 
-pub(super) struct ControlFlowTable {
-    /// jump table, the key is the branch instruction pc, the value is the target pc.
-    /// the table can be used to quickly set the pc to target pc.
-    jump_table: HashMap<Pc, Pc>,
-    /// stack height table, the key is the branch instruction pc, the value is
-    /// the stack height when entering it. This is used when we take a branch,
-    /// we need to unwind the stack to this height.
-    stack_height_table: HashMap<Pc, usize>,
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum BlockControlFlowType {
+    Block,
+    If {
+        else_pc: Option<Pc>,
+        condition_met: bool,
+    },
+    Loop,
+}
+
+/// Control flow frame for a code block, start with Block, If, Loop, etc.
+pub(super) struct BlockControlFlowFrame {
+    /// Could be If, Else, Block, Loop, etc.
+    pub(super) control_type: BlockControlFlowType,
+    /// the height of the stack that expected when the block ends, for unwinding
+    pub(super) expected_stack_height: usize,
+    /// Program counter where the block starts
+    pub(super) start_pc: Pc,
+    /// Program counter of the `end` instruction for the block
+    pub(super) end_pc: Pc,
 }
 
 pub(crate) struct WasmFunctionExecutorImpl<'a> {
@@ -38,8 +50,8 @@ pub(crate) struct WasmFunctionExecutorImpl<'a> {
     operand_stack: VecDeque<WasmValue>,
     /// local variables
     locals: Vec<WasmValue>,
-    /// The control flow table
-    control_flow_table: ControlFlowTable,
+    /// The control flow frame for code blocks
+    control_flow_frames: VecDeque<BlockControlFlowFrame>,
     /// The reference to the linear memory for the Wasm VM instance.
     mem: Rc<RefCell<LinearMemory>>,
     /// The reference to the Wasm module for the Wasm VM instance.
@@ -48,150 +60,177 @@ pub(crate) struct WasmFunctionExecutorImpl<'a> {
 
 impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
     fn execute(&mut self) -> Result<WasmValue> {
+        // function frame
+        self.control_flow_frames.push_back(BlockControlFlowFrame {
+            control_type: BlockControlFlowType::Block,
+            expected_stack_height: 0,
+            start_pc: 0,
+            end_pc: Self::find_matching_end(&self.func.get_insts(), 0)?,
+        });
+
         let mut done_exec = false;
-        while !done_exec && self.pc.0 < self.func.get_insts().len() {
-            let inst = self.func.get_inst(self.pc.0).clone();
+        while !done_exec && self.pc < self.func.get_insts().len() {
+            let inst = self.func.get_inst(self.pc).clone();
+
+            if self.should_skip(self.pc) {
+                self.inc_pc();
+                continue;
+            }
+
             match inst {
-                Instructions::Return => {
+                Instruction::Return => {
                     done_exec = true;
                 }
-                Instructions::Unreachable => {
+                Instruction::Unreachable => {
                     Err(anyhow!("unreachable instruction"))?;
                 }
-                Instructions::Nop => {
+                Instruction::Nop => {
                     self.inc_pc();
                 }
-                Instructions::Block { ty } => todo!(),
-                Instructions::Loop { ty } => todo!(),
-                Instructions::If { ty } => todo!(),
-                Instructions::Else => todo!(),
-                Instructions::End => {
+                Instruction::Block { ty } => {
+                    let insts = self.func.get_insts().clone();
+                    self.run_block(&insts, ty)?;
                     self.inc_pc();
                 }
-                Instructions::Br { rel_depth } => todo!(),
-                Instructions::BrIf { rel_depth } => todo!(),
-                Instructions::BrTable { table } => todo!(),
-                Instructions::Call { func_idx } => {
+                Instruction::Loop { ty } => todo!(),
+                Instruction::If { ty } => {
+                    let insts = self.func.get_insts().clone();
+                    self.run_if(&insts, ty)?;
+                    self.inc_pc();
+                }
+                // we use control flow frames to handle else blocks, instructions
+                // check the top of the stack and conditionally execute, so we
+                // don't need to handle them here.
+                Instruction::Else => {
+                    self.inc_pc();
+                }
+                Instruction::End => {
+                    self.inc_pc();
+                }
+                Instruction::Br { rel_depth } => todo!(),
+                Instruction::BrIf { rel_depth } => todo!(),
+                Instruction::BrTable { table } => todo!(),
+                Instruction::Call { func_idx } => {
                     let func = self.module.borrow().get_func(func_idx).unwrap().clone();
                     let v = self.call_func(func);
                     self.push_operand_stack(v);
                     self.inc_pc();
                 }
-                Instructions::CallIndirect {
+                Instruction::CallIndirect {
                     type_index,
                     table_index,
                 } => {
                     self.run_call_indirect(type_index, table_index)?;
                     self.inc_pc();
                 }
-                Instructions::Drop => {
+                Instruction::Drop => {
                     self.pop_operand_stack();
                     self.inc_pc();
                 }
-                Instructions::Select => todo!(),
-                Instructions::LocalGet { local_idx } => {
+                Instruction::Select => todo!(),
+                Instruction::LocalGet { local_idx } => {
                     let local = self.locals[local_idx as usize];
                     self.push_operand_stack(local);
                     self.inc_pc();
                 }
-                Instructions::LocalSet { local_idx } => {
+                Instruction::LocalSet { local_idx } => {
                     let value = self.pop_operand_stack();
                     self.locals[local_idx as usize] = value;
                     self.inc_pc();
                 }
-                Instructions::LocalTee { local_idx } => {
+                Instruction::LocalTee { local_idx } => {
                     let value = self.pop_operand_stack();
                     self.locals[local_idx as usize] = value;
                     self.push_operand_stack(value);
                     self.inc_pc();
                 }
-                Instructions::GlobalGet { global_idx } => {
+                Instruction::GlobalGet { global_idx } => {
                     self.run_global_get(global_idx)?;
                     self.inc_pc();
                 }
-                Instructions::GlobalSet { global_idx } => {
+                Instruction::GlobalSet { global_idx } => {
                     self.run_global_set(global_idx)?;
                     self.inc_pc();
                 }
-                Instructions::I32Load { memarg } => {
+                Instruction::I32Load { memarg } => {
                     let v = self.run_i32_load(&memarg, 4)?;
                     self.push_operand_stack(v);
                     self.inc_pc();
                 }
-                Instructions::F64Load { memarg } => {
+                Instruction::F64Load { memarg } => {
                     let v = self.run_f64_load(&memarg)?;
                     self.push_operand_stack(v);
                     self.inc_pc();
                 }
-                Instructions::I32Load8S { memarg } => {
+                Instruction::I32Load8S { memarg } => {
                     let v = self.run_i32_load(&memarg, 1)?.as_i32();
                     let v = ((v & 0xFF) as i8) as i32;
                     self.push_operand_stack(WasmValue::I32(v));
                     self.inc_pc();
                 }
-                Instructions::I32Load8U { memarg } => {
+                Instruction::I32Load8U { memarg } => {
                     let v = self.run_i32_load(&memarg, 1)?.as_i32();
                     let v = v & 0xFF;
                     self.push_operand_stack(WasmValue::I32(v));
                     self.inc_pc();
                 }
-                Instructions::I32Load16S { memarg } => {
+                Instruction::I32Load16S { memarg } => {
                     let v = self.run_i32_load(&memarg, 2)?.as_i32();
                     let v = ((v & 0xFFFF) as i16) as i32;
                     self.push_operand_stack(WasmValue::I32(v));
                     self.inc_pc();
                 }
-                Instructions::I32Load16U { memarg } => {
+                Instruction::I32Load16U { memarg } => {
                     let v = self.run_i32_load(&memarg, 2)?.as_i32();
                     let v = v & 0xFFFF;
                     self.push_operand_stack(WasmValue::I32(v));
                     self.inc_pc();
                 }
-                Instructions::I32Store { memarg } => {
+                Instruction::I32Store { memarg } => {
                     self.run_i32_store(&memarg, 4)?;
                     self.inc_pc();
                 }
-                Instructions::F64Store { memarg } => {
+                Instruction::F64Store { memarg } => {
                     self.run_f64_store(&memarg)?;
                     self.inc_pc();
                 }
-                Instructions::I32Store8 { memarg } => {
+                Instruction::I32Store8 { memarg } => {
                     self.run_i32_store(&memarg, 1)?;
                     self.inc_pc();
                 }
-                Instructions::I32Store16 { memarg } => {
+                Instruction::I32Store16 { memarg } => {
                     self.run_i32_store(&memarg, 2)?;
                     self.inc_pc();
                 }
-                Instructions::MemorySize { mem } => {
+                Instruction::MemorySize { mem } => {
                     self.run_memory_size(mem)?;
                     self.inc_pc();
                 }
-                Instructions::MemoryGrow { mem } => {
+                Instruction::MemoryGrow { mem } => {
                     self.run_memory_grow(mem)?;
                     self.inc_pc();
                 }
-                Instructions::I32Const { value } => {
+                Instruction::I32Const { value } => {
                     self.push_operand_stack(WasmValue::I32(value));
                     self.inc_pc();
                 }
-                Instructions::F64Const { value } => {
+                Instruction::F64Const { value } => {
                     self.push_operand_stack(WasmValue::F64(value));
                     self.inc_pc();
                 }
-                Instructions::I32Unop(i32_unop) => {
+                Instruction::I32Unop(i32_unop) => {
                     self.run_i32_unop(&i32_unop)?;
                     self.inc_pc();
                 }
-                Instructions::I32Binp(i32_binop) => {
+                Instruction::I32Binp(i32_binop) => {
                     self.run_i32_binop(&i32_binop)?;
                     self.inc_pc();
                 }
-                Instructions::F64Unop(f64_unop) => {
+                Instruction::F64Unop(f64_unop) => {
                     self.run_f64_unop(&f64_unop)?;
                     self.inc_pc();
                 }
-                Instructions::F64Binop(f64_binop) => {
+                Instruction::F64Binop(f64_binop) => {
                     self.run_f64_binop(&f64_binop)?;
                     self.inc_pc();
                 }
@@ -209,15 +248,14 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         mem: Rc<RefCell<LinearMemory>>,
         main_locals: Option<Vec<WasmValue>>,
     ) -> Self {
-        let control_flow_table = Self::analyze_control_flow_table(&func, Rc::clone(&module));
         let locals = Self::setup_locals(main_locals, &func);
         Self {
             func,
-            pc: Pc(0),
+            pc: 0,
             mem,
             module,
             locals,
-            control_flow_table,
+            control_flow_frames: VecDeque::new(),
             operand_stack: VecDeque::new(),
         }
     }
@@ -236,7 +274,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
 
 impl<'a> WasmFunctionExecutorImpl<'a> {
     pub fn inc_pc(&mut self) {
-        self.pc.0 += 1;
+        self.pc += 1;
     }
 
     pub fn set_pc(&mut self, pc: Pc) {
@@ -262,6 +300,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     }
 
     pub fn call_func(&self, func: FuncDecl) -> WasmValue {
+        // TODO: push the stack value to the local variables
         let mut executor = WasmFunctionExecutorImpl::new(
             func,
             Rc::clone(&self.module),
@@ -270,20 +309,6 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         );
 
         executor.execute().unwrap()
-    }
-
-    // TODO
-    fn analyze_control_flow_table(
-        func: &FuncDecl,
-        module: Rc<RefCell<WasmModule<'a>>>,
-    ) -> ControlFlowTable {
-        let jump_table = HashMap::new();
-        let stack_height_table = HashMap::new();
-
-        ControlFlowTable {
-            jump_table,
-            stack_height_table,
-        }
     }
 }
 
@@ -621,6 +646,122 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         self.push_operand_stack(result);
 
         Ok(())
+    }
+
+    // control flow functions
+    fn run_block(&mut self, insts: &[Instruction], block_type: BlockType) -> Result<()> {
+        let mut expected_stack_height = self.operand_stack.len();
+        expected_stack_height += self.stack_height_delta(block_type);
+
+        let frame = BlockControlFlowFrame {
+            control_type: BlockControlFlowType::Block,
+            expected_stack_height,
+            start_pc: self.pc,
+            end_pc: Self::find_matching_end(insts, self.pc)?,
+        };
+
+        self.control_flow_frames.push_back(frame);
+
+        Ok(())
+    }
+
+    /// Run the if instruction, return true if the condition is met, false otherwise
+    fn run_if(&mut self, insts: &[Instruction], block_type: BlockType) -> Result<()> {
+        let mut expected_stack_height = self.operand_stack.len();
+        expected_stack_height += self.stack_height_delta(block_type);
+
+        let cond = self.pop_operand_stack().as_i32();
+        let else_pc = Self::find_closest_else(insts, self.pc);
+        let frame = BlockControlFlowFrame {
+            control_type: BlockControlFlowType::If {
+                else_pc,
+                condition_met: cond != 0,
+            },
+            expected_stack_height,
+            start_pc: self.pc,
+            end_pc: Self::find_matching_end(insts, self.pc)?,
+        };
+
+        self.control_flow_frames.push_back(frame);
+
+        Ok(())
+    }
+}
+
+impl<'a> WasmFunctionExecutorImpl<'a> {
+    fn find_closest_else(insts: &[Instruction], start: Pc) -> Option<Pc> {
+        let end_pc = Self::find_matching_end(insts, start).expect("no matching end for if block");
+        let mut pc = start;
+        while pc < insts.len() {
+            let inst = &insts[pc];
+            if inst == &Instruction::Else {
+                if pc < end_pc {
+                    return Some(pc);
+                } else {
+                    return None;
+                }
+            }
+            pc += 1;
+        }
+
+        None
+    }
+
+    fn find_matching_end(insts: &[Instruction], start: Pc) -> Result<Pc> {
+        let mut pc = start;
+        let mut depth = 0;
+        while pc < insts.len() {
+            let inst = &insts[pc];
+            if Instruction::is_control_block_start(inst) {
+                depth += 1;
+            } else if Instruction::is_control_block_end(inst) {
+                depth -= 1;
+            }
+
+            if depth == 0 {
+                return Ok(pc);
+            }
+
+            pc += 1;
+        }
+
+        Err(anyhow!("no matching end for block"))
+    }
+
+    fn should_skip(&self, pc: Pc) -> bool {
+        let frame = self.control_flow_frames.back().unwrap();
+        match frame.control_type {
+            BlockControlFlowType::Block => false,
+            BlockControlFlowType::Loop => false,
+            BlockControlFlowType::If {
+                else_pc,
+                condition_met,
+            } => {
+                if let Some(else_pc) = else_pc {
+                    if pc >= else_pc {
+                        condition_met
+                    } else {
+                        !condition_met
+                    }
+                } else {
+                    !condition_met
+                }
+            }
+        }
+    }
+
+    fn stack_height_delta(&self, block_type: BlockType) -> usize {
+        match block_type {
+            BlockType::Empty => 0,
+            BlockType::Type(_) => 1,
+            BlockType::FuncType(f) => {
+                let module = self.module.borrow();
+                let func = module.get_func(f).expect("function not found");
+                let nparams = func.get_sig().params().len();
+                let nresults = func.get_sig().results().len();
+                nresults - nparams
+            }
+        }
     }
 }
 

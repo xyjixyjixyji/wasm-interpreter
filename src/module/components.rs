@@ -1,4 +1,4 @@
-use super::{insts::Instructions, parse::FuncBody};
+use super::{insts::Instruction, parse::FuncBody};
 use wasmparser::{FuncType, GlobalType, Import, ValType};
 
 #[derive(Default, Debug)]
@@ -20,7 +20,7 @@ impl<'a> ImportSet<'a> {
 pub struct FuncDecl {
     sig: FuncType,
     pure_locals: Vec<(u32, ValType)>,
-    insts: Vec<Instructions>,
+    insts: Vec<Instruction>,
 }
 
 impl FuncDecl {
@@ -40,11 +40,11 @@ impl FuncDecl {
         &self.pure_locals
     }
 
-    pub fn get_insts(&self) -> &Vec<Instructions> {
+    pub fn get_insts(&self) -> &Vec<Instruction> {
         &self.insts
     }
 
-    pub fn get_inst(&self, idx: usize) -> &Instructions {
+    pub fn get_inst(&self, idx: usize) -> &Instruction {
         &self.insts[idx]
     }
 
