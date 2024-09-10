@@ -50,7 +50,11 @@ impl<'a> WasmVm for WasmInterpreter<'a> {
         );
 
         let result = executor.execute()?;
-        Ok(result.to_string())
+        if let Some(v) = result {
+            Ok(v.to_string())
+        } else {
+            Ok(String::new())
+        }
     }
 }
 

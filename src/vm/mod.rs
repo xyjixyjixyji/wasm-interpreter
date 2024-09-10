@@ -15,5 +15,5 @@ pub trait WasmVm {
 }
 
 pub trait WasmFunctionExecutor {
-    fn execute(&mut self) -> Result<WasmValue>;
+    fn execute(&mut self) -> Result<Option<WasmValue>>;
 }

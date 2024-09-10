@@ -58,7 +58,7 @@ pub(crate) struct WasmFunctionExecutorImpl<'a> {
 }
 
 impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
-    fn execute(&mut self) -> Result<WasmValue> {
+    fn execute(&mut self) -> Result<Option<WasmValue>> {
         // function frame
         self.control_flow_frames.push_back(BlockControlFlowFrame {
             control_type: BlockControlFlowType::Block,
@@ -255,7 +255,11 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
             }
         }
 
-        Ok(self.pop_operand_stack())
+        if self.func.get_sig().results().is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(self.pop_operand_stack()))
+        }
     }
 }
 
@@ -317,7 +321,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         self.mem.borrow_mut().grow(additional_pages);
     }
 
-    pub fn call_func(&mut self, func: FuncDecl) -> WasmValue {
+    pub fn call_func(&mut self, func: FuncDecl) -> Option<WasmValue> {
         // prepare the argument locals
         let mut args = VecDeque::new();
         for param in func.get_sig().params().iter().rev() {
@@ -363,7 +367,9 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         drop(module);
 
         let v = self.call_func(func);
-        self.push_operand_stack(v);
+        if let Some(v) = v {
+            self.push_operand_stack(v);
+        }
         Ok(())
     }
 
@@ -947,8 +953,9 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
 
 impl<'a> WasmFunctionExecutorImpl<'a> {
     fn try_run_host_func(&mut self, func_ind: u32) -> Result<bool> {
-        let module = self.module.borrow();
-        let host_func_import = module
+        let host_func_import = self
+            .module
+            .borrow()
             .get_imports()
             .imports
             .iter()
@@ -956,8 +963,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
                 TypeRef::Func(ind) => ind == func_ind,
                 _ => false,
             })
-            .and_then(|i| Some(i.name.to_string()));
-        drop(module);
+            .map(|i| i.name.to_string());
 
         if let Some(host_func_name) = host_func_import {
             self.run_host_func(&host_func_name)?;
@@ -967,9 +973,9 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         }
     }
 
-    const HOST_FUNC_PUTI: &str = "puti";
-    const HOST_FUNC_PUTD: &str = "putd";
-    const HOST_FUNC_PUTS: &str = "puts";
+    const HOST_FUNC_PUTI: &'static str = "puti";
+    const HOST_FUNC_PUTD: &'static str = "putd";
+    const HOST_FUNC_PUTS: &'static str = "puts";
 
     fn run_host_func(&mut self, func_name: &str) -> Result<()> {
         match func_name {
