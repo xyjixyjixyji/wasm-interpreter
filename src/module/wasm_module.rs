@@ -85,7 +85,8 @@ impl<'a> WasmModule<'a> {
                     tot_func = count;
                 }
                 CodeSectionEntry(body) => {
-                    let func_ref = module.funcs.get_mut(n_func as usize).unwrap();
+                    let func_ind = n_func + module.get_num_imports() as u32;
+                    let func_ref = module.funcs.get_mut(func_ind as usize).unwrap();
                     func_ref.add_func_body(Self::parse_code_section(body)?);
 
                     n_func += 1;

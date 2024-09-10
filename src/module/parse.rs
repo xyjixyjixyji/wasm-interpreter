@@ -50,9 +50,7 @@ impl<'a> WasmModule<'a> {
             num_globals: 0,
         };
 
-        println!("Import");
         for import in iread {
-            println!("Import");
             let import = import?;
             match import.ty {
                 wasmparser::TypeRef::Func(_) => import_set.num_funcs += 1,

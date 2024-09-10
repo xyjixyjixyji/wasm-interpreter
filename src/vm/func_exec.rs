@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use debug_cell::RefCell;
-use wasmparser::{BinaryReader, BlockType, ValType, WasmFeatures};
+use wasmparser::{BinaryReader, BlockType, TypeRef, ValType, WasmFeatures};
 
 use std::{collections::VecDeque, rc::Rc};
 
@@ -948,16 +948,18 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
 impl<'a> WasmFunctionExecutorImpl<'a> {
     fn try_run_host_func(&mut self, func_ind: u32) -> Result<bool> {
         let module = self.module.borrow();
-        let host_func_export = module
-            .get_exports()
+        let host_func_import = module
+            .get_imports()
+            .imports
             .iter()
-            .find(|export| {
-                matches!(export.kind, wasmparser::ExternalKind::Func) && export.index == func_ind
+            .find(|i| match i.ty {
+                TypeRef::Func(ind) => ind == func_ind,
+                _ => false,
             })
-            .and_then(|e| Some(e.name.to_string()));
+            .and_then(|i| Some(i.name.to_string()));
         drop(module);
 
-        if let Some(host_func_name) = host_func_export {
+        if let Some(host_func_name) = host_func_import {
             self.run_host_func(&host_func_name)?;
             Ok(true)
         } else {

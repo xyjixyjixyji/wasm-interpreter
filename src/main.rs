@@ -63,6 +63,7 @@ fn main() {
             panic!("{:?}", e);
         }
     };
+
     let vm = WasmInterpreter::from_module(module);
     match vm.run(args.wasm_args) {
         Ok(r) => {
