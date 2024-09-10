@@ -3,8 +3,8 @@
   (import "weewasm" "puti" (func $puti (param i32)))
 
   ;; Start function that calls `puti`
-  (func (export "main")
-    (i32.const 42) ;; Push the number 42 onto the stack
+  (func (export "main") (param i32)
+    (local.get 0)
     (call $puti)   ;; Call the host function `puti` with 42
   )
 )
