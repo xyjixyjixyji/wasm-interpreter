@@ -43,13 +43,21 @@ impl<'a> WasmModule<'a> {
                 }
                 ImportSection(iread) => {
                     module.imports = Self::parse_import_section(iread)?;
+                    for import in &module.imports.imports {
+                        match import.ty {
+                            wasmparser::TypeRef::Func(ind) => module
+                                .funcs
+                                .push(FuncDecl::new(module.sigs[ind as usize].clone())),
+                            _ => todo!("import tag not yet implemented"),
+                        }
+                    }
                 }
                 FunctionSection(fread) => {
                     if module.funcs.len() != module.get_num_imports() {
                         anyhow::bail!("malformed func imports");
                     }
                     let funcs = Self::parse_function_section(fread, module.sigs.clone())?;
-                    module.funcs = funcs;
+                    module.funcs.extend(funcs);
                 }
                 TableSection(tread) => {
                     module.tables = Self::parse_table_section(tread)?;
@@ -121,6 +129,10 @@ impl<'a> WasmModule<'a> {
 
     pub fn get_sig(&self, index: u32) -> Option<&FuncType> {
         self.sigs.get(index as usize)
+    }
+
+    pub fn get_imports(&self) -> &ImportSet<'a> {
+        &self.imports
     }
 
     pub fn get_num_imports(&self) -> usize {

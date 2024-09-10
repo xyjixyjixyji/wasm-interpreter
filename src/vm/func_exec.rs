@@ -125,9 +125,7 @@ impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
                     self.run_br_table(&table)?;
                 }
                 Instruction::Call { func_idx } => {
-                    let func = self.module.borrow().get_func(func_idx).unwrap().clone();
-                    let v = self.call_func(func);
-                    self.push_operand_stack(v);
+                    self.run_call(func_idx)?;
                     self.inc_pc();
                 }
                 Instruction::CallIndirect {
@@ -353,6 +351,22 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
 
 /// Instruction execution
 impl<'a> WasmFunctionExecutorImpl<'a> {
+    fn run_call(&mut self, func_idx: u32) -> Result<()> {
+        // first try to run host function
+        let runned = self.try_run_host_func(func_idx)?;
+        if runned {
+            return Ok(());
+        }
+
+        let module = self.module.borrow();
+        let func = module.get_func(func_idx).unwrap().clone();
+        drop(module);
+
+        let v = self.call_func(func);
+        self.push_operand_stack(v);
+        Ok(())
+    }
+
     fn run_call_indirect(&mut self, type_index: u32, table_index: u32) -> Result<()> {
         let callee_index_in_table = self.pop_operand_stack().as_i32();
 
@@ -406,24 +420,23 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         let callee_index = func_indices
             .get(callee_index_in_table as usize)
             .ok_or_else(|| anyhow!("callee index not found"))?;
-        let callee = module_ref
-            .get_func(*callee_index)
-            .expect("callee not found")
-            .clone();
 
         // check callee signature, make sure it matches the expected signature
         let expected_sig = module_ref
             .get_sig(type_index)
             .expect("callee signature not found");
-        let actual_sig = callee.get_sig();
+        let actual_sig = module_ref
+            .get_func(*callee_index)
+            .expect("callee not found")
+            .get_sig();
+
         if expected_sig != actual_sig {
             return Err(anyhow!("call_indirect: callee signature mismatch"));
         }
         drop(module_ref);
 
         // call it and push the result to the operand stack
-        let v = self.call_func(callee.clone());
-        self.push_operand_stack(v);
+        self.run_call(*callee_index)?;
 
         Ok(())
     }
@@ -929,6 +942,59 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
         for _ in 0..num_results {
             self.push_operand_stack(result_buf.pop_back().unwrap());
         }
+    }
+}
+
+impl<'a> WasmFunctionExecutorImpl<'a> {
+    fn try_run_host_func(&mut self, func_ind: u32) -> Result<bool> {
+        let module = self.module.borrow();
+        let host_func_export = module
+            .get_exports()
+            .iter()
+            .find(|export| {
+                matches!(export.kind, wasmparser::ExternalKind::Func) && export.index == func_ind
+            })
+            .and_then(|e| Some(e.name.to_string()));
+        drop(module);
+
+        if let Some(host_func_name) = host_func_export {
+            self.run_host_func(&host_func_name)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    const HOST_FUNC_PUTI: &str = "puti";
+    const HOST_FUNC_PUTD: &str = "putd";
+    const HOST_FUNC_PUTS: &str = "puts";
+
+    fn run_host_func(&mut self, func_name: &str) -> Result<()> {
+        match func_name {
+            Self::HOST_FUNC_PUTI => {
+                let a = self.pop_operand_stack().as_i32();
+                print!("{}", a);
+            }
+            Self::HOST_FUNC_PUTD => {
+                let a = self.pop_operand_stack().as_f64();
+                print!("{:.6}", a);
+            }
+            Self::HOST_FUNC_PUTS => {
+                let len = self.pop_operand_stack().as_i32();
+                let addr = self.pop_operand_stack().as_i32();
+                let mem = self.mem.borrow();
+
+                if (addr + len) as usize > self.mem_size() {
+                    return Err(anyhow!("out of bounds memory access"));
+                }
+
+                let bytes = mem.0.get(addr as usize..(addr + len) as usize).unwrap();
+                let s = String::from_utf8(bytes.to_vec())?;
+                print!("{}", s);
+            }
+            _ => panic!("host function {} not supported", func_name),
+        }
+        Ok(())
     }
 }
 
