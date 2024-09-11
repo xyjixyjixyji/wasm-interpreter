@@ -7,7 +7,7 @@ all: build build-tests
 build:
 	cargo check
 	cargo b
-	cp target/debug/wasm-interpreter-rs ./wasm-vm
+	ln -sf target/debug/wasm-interpreter-rs ./wasm-vm
 
 build-tests:
 	make -C tests
