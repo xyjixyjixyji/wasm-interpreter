@@ -4,14 +4,14 @@
   (export "memory" (memory 0))
 
   ;; Function to increment the local variable
-  (func (export "main") (param $n i32) (result i32)
+  (func (export "main") (result i32)
     ;; Local variable to store the incremented value
     (local $i i32)   ;; This is the variable to increment
     (local $counter i32)  ;; Loop counter
 
     ;; Initialize the local variables
     (local.set $i (i32.const 0))       ;; $i starts at 0
-    (local.set $counter (local.get $n))  ;; $counter is set to the input
+    (local.set $counter (i32.const 20))  ;; $counter is set to the input
 
     ;; Loop label
     (block $exit

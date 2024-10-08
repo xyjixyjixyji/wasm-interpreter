@@ -10,6 +10,7 @@ mod vm;
 struct WasmInterpreterArgs {
     wasm_args: Vec<WasmValue>,
     infile: String,
+    jit_all: bool,
 }
 
 fn parse_args() -> WasmInterpreterArgs {
@@ -17,10 +18,14 @@ fn parse_args() -> WasmInterpreterArgs {
 
     let mut wasm_args_str = vec![];
     let mut infile = String::new();
-
+    let mut jit_all = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
+            "--jit" => {
+                jit_all = true;
+                i += 1;
+            }
             "-a" => {
                 i += 1;
                 while i < args.len() - 1 {
@@ -47,7 +52,11 @@ fn parse_args() -> WasmInterpreterArgs {
         })
         .collect();
 
-    WasmInterpreterArgs { wasm_args, infile }
+    WasmInterpreterArgs {
+        wasm_args,
+        infile,
+        jit_all,
+    }
 }
 
 fn main() {
