@@ -26,6 +26,7 @@ impl LinearMemory {
 pub struct WasmInterpreter<'a> {
     module: Rc<RefCell<WasmModule<'a>>>,
     mem: Rc<RefCell<LinearMemory>>,
+    jit_mode: bool,
 }
 
 impl<'a> WasmVm for WasmInterpreter<'a> {
@@ -59,7 +60,7 @@ impl<'a> WasmVm for WasmInterpreter<'a> {
 }
 
 impl<'a> WasmInterpreter<'a> {
-    pub fn from_module(module: WasmModule<'a>) -> Self {
+    pub fn from_module(module: WasmModule<'a>, jit_mode: bool) -> Self {
         let mut mem = LinearMemory(if let Some(mem) = module.get_memory() {
             vec![0; mem.initial as usize * WASM_DEFAULT_PAGE_SIZE_BYTE]
         } else {
@@ -71,6 +72,7 @@ impl<'a> WasmInterpreter<'a> {
         WasmInterpreter {
             module: Rc::new(RefCell::new(module)),
             mem: Rc::new(RefCell::new(mem)),
+            jit_mode: jit_mode,
         }
     }
 }

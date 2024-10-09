@@ -6,8 +6,8 @@ all: build build-tests
 
 build:
 	cargo check
-	cargo b
-	ln -sf target/debug/wasm-interpreter-rs ./wasm-vm
+	cargo b --target x86_64-apple-darwin
+	ln -sf target/x86_64-apple-darwin/debug/wasm-interpreter-rs ./wasm-vm
 
 build-tests:
 	make -C tests

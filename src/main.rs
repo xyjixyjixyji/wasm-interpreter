@@ -6,24 +6,25 @@ use vm::{WasmInterpreter, WasmVm};
 
 mod module;
 mod vm;
+mod jit;
 
-struct WasmInterpreterArgs {
+struct WasmInterpreterConfig {
     wasm_args: Vec<WasmValue>,
     infile: String,
-    jit_all: bool,
+    jit_mode: bool,
 }
 
-fn parse_args() -> WasmInterpreterArgs {
+fn parse_args() -> WasmInterpreterConfig {
     let args: Vec<String> = env::args().collect();
 
     let mut wasm_args_str = vec![];
     let mut infile = String::new();
-    let mut jit_all = false;
+    let mut jit_mode = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--jit" => {
-                jit_all = true;
+                jit_mode = true;
                 i += 1;
             }
             "-a" => {
@@ -52,10 +53,10 @@ fn parse_args() -> WasmInterpreterArgs {
         })
         .collect();
 
-    WasmInterpreterArgs {
+    WasmInterpreterConfig {
         wasm_args,
         infile,
-        jit_all,
+        jit_mode,
     }
 }
 
@@ -73,7 +74,7 @@ fn main() {
         }
     };
 
-    let vm = WasmInterpreter::from_module(module);
+    let vm = WasmInterpreter::from_module(module, args.jit_mode);
     match vm.run(args.wasm_args) {
         Ok(r) => {
             print!("{}", r)
