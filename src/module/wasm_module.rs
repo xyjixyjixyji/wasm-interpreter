@@ -144,6 +144,10 @@ impl<'a> WasmModule<'a> {
         self.funcs.get(index as usize)
     }
 
+    pub fn get_funcs(&self) -> &Vec<FuncDecl> {
+        &self.funcs
+    }
+
     pub fn get_data_count(&self) -> Option<u32> {
         self.data_count
     }

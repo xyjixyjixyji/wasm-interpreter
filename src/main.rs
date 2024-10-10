@@ -4,9 +4,9 @@ use module::{value_type::WasmValue, wasm_module::WasmModule};
 
 use vm::{WasmInterpreter, WasmVm};
 
+mod jit;
 mod module;
 mod vm;
-mod jit;
 
 struct WasmInterpreterConfig {
     wasm_args: Vec<WasmValue>,

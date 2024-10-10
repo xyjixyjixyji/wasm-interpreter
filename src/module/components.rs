@@ -16,7 +16,7 @@ impl<'a> ImportSet<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FuncDecl {
     sig: FuncType,
     pure_locals: Vec<(u32, ValType)>,

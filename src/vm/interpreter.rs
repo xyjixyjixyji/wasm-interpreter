@@ -4,6 +4,7 @@ use debug_cell::RefCell;
 use std::rc::Rc;
 
 use crate::{
+    jit::{I32ReturnFunc, WasmJitCompiler, X86JitCompiler},
     module::{value_type::WasmValue, wasm_module::WasmModule, wasmops::WASM_OP_I32_CONST},
     vm::WASM_DEFAULT_PAGE_SIZE_BYTE,
 };
@@ -43,18 +44,27 @@ impl<'a> WasmVm for WasmInterpreter<'a> {
                 .clone()
         };
 
-        let mut executor = WasmFunctionExecutorImpl::new(
-            main_func,
-            Rc::clone(&self.module),
-            Rc::clone(&self.mem),
-            Some(main_params),
-        );
-
-        let result = executor.execute()?;
-        if let Some(v) = result {
-            Ok(v.to_string())
+        if self.jit_mode {
+            log::debug!("Running in JIT mode");
+            let mut compiler = X86JitCompiler::new();
+            let codeptr = compiler.compile(&main_func)?;
+            let f: I32ReturnFunc = unsafe { std::mem::transmute(codeptr) };
+            Ok(f().to_string())
         } else {
-            Ok(String::new())
+            log::debug!("Running in interpreter mode");
+            let mut executor = WasmFunctionExecutorImpl::new(
+                main_func,
+                Rc::clone(&self.module),
+                Rc::clone(&self.mem),
+                Some(main_params),
+            );
+
+            let result = executor.execute()?;
+            if let Some(v) = result {
+                Ok(v.to_string())
+            } else {
+                Ok(String::new())
+            }
         }
     }
 }

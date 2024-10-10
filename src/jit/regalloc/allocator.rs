@@ -26,12 +26,16 @@ impl X86RegisterAllocator {
 
     /// Allocate a position to hold the value.
     pub fn next(&mut self) -> Register {
-        self.next_reg()
+        let reg = self.next_reg();
+        self.reg_vec.push(reg);
+        reg
     }
 
     /// Allocate a position to spill the value. Used for wasm local.
     pub fn new_spill(&mut self) -> Register {
-        self.next_spill()
+        let reg = self.next_spill();
+        self.reg_vec.push(reg);
+        reg
     }
 }
 
