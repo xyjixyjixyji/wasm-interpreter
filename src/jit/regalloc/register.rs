@@ -18,6 +18,31 @@ pub enum X64Register {
     R15, // Reserved for linear memory based address
 }
 
+impl X64Register {
+    pub fn as_index(&self) -> u64 {
+        match self {
+            X64Register::Rax => 0,
+            X64Register::Rcx => 1,
+            X64Register::Rdx => 2,
+            X64Register::Rbx => 3,
+            X64Register::Rsp => 4,
+            X64Register::Rbp => 5,
+            X64Register::Rsi => 6,
+            X64Register::Rdi => 7,
+            X64Register::R8 => 8,
+            X64Register::R9 => 9,
+            X64Register::R10 => 10,
+            X64Register::R11 => 11,
+            X64Register::R12 => 12,
+            X64Register::R13 => 13,
+            X64Register::R14 => 14,
+            X64Register::R15 => 15,
+        }
+    }
+}
+
+pub const REG_MEMORY_BASE: X64Register = X64Register::R15;
+
 pub const ALLOC_POOL: [X64Register; 13] = [
     X64Register::Rax,
     X64Register::Rdi,
@@ -34,29 +59,6 @@ pub const ALLOC_POOL: [X64Register; 13] = [
     X64Register::R14,
 ];
 
-impl std::fmt::Display for X64Register {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            X64Register::Rax => write!(f, "rax"),
-            X64Register::Rbx => write!(f, "rbx"),
-            X64Register::Rcx => write!(f, "rcx"),
-            X64Register::Rdx => write!(f, "rdx"),
-            X64Register::Rsi => write!(f, "rsi"),
-            X64Register::Rdi => write!(f, "rdi"),
-            X64Register::Rbp => write!(f, "rbp"),
-            X64Register::Rsp => write!(f, "rsp"),
-            X64Register::R8 => write!(f, "r8"),
-            X64Register::R9 => write!(f, "r9"),
-            X64Register::R10 => write!(f, "r10"),
-            X64Register::R11 => write!(f, "r11"),
-            X64Register::R12 => write!(f, "r12"),
-            X64Register::R13 => write!(f, "r13"),
-            X64Register::R14 => write!(f, "r14"),
-            X64Register::R15 => write!(f, "r15"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Register {
     Reg(X64Register),
@@ -66,7 +68,7 @@ pub enum Register {
 impl std::fmt::Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Register::Reg(r) => write!(f, "{}", r),
+            Register::Reg(r) => write!(f, "R{}", r.as_index()),
             Register::Stack(offset) => write!(f, "[%rsp + {}]", offset),
         }
     }

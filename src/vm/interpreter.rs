@@ -4,8 +4,11 @@ use debug_cell::RefCell;
 use std::rc::Rc;
 
 use crate::{
-    jit::{I32ReturnFunc, WasmJitCompiler, X86JitCompiler},
-    module::{value_type::WasmValue, wasm_module::WasmModule, wasmops::WASM_OP_I32_CONST},
+    jit::{F64ReturnFunc, I32ReturnFunc, WasmJitCompiler, X86JitCompiler},
+    module::{
+        components::FuncDecl, value_type::WasmValue, wasm_module::WasmModule,
+        wasmops::WASM_OP_I32_CONST,
+    },
     vm::WASM_DEFAULT_PAGE_SIZE_BYTE,
 };
 
@@ -30,42 +33,67 @@ pub struct WasmInterpreter<'a> {
     jit_mode: bool,
 }
 
-impl<'a> WasmVm for WasmInterpreter<'a> {
+impl WasmVm for WasmInterpreter<'_> {
     fn run(&self, main_params: Vec<WasmValue>) -> anyhow::Result<String> {
         // find main from export to run
         let main_func = {
             let module_ref = self.module.borrow();
+            let main_index = module_ref
+                .get_main_index()
+                .expect("main function not found");
             module_ref
-                .get_exports()
-                .iter()
-                .find(|export| export.name == "main")
-                .and_then(|export| module_ref.get_func(export.index))
-                .ok_or_else(|| anyhow::anyhow!("main function not found"))?
+                .get_func(main_index)
+                .ok_or_else(|| anyhow!("main function not found"))?
                 .clone()
         };
 
-        if self.jit_mode {
+        let result = if self.jit_mode {
             log::debug!("Running in JIT mode");
-            let mut compiler = X86JitCompiler::new();
-            let codeptr = compiler.compile(&main_func)?;
-            let f: I32ReturnFunc = unsafe { std::mem::transmute(codeptr) };
-            Ok(f().to_string())
+            self.run_jit(main_func, main_params)?
         } else {
             log::debug!("Running in interpreter mode");
-            let mut executor = WasmFunctionExecutorImpl::new(
-                main_func,
-                Rc::clone(&self.module),
-                Rc::clone(&self.mem),
-                Some(main_params),
-            );
+            self.run_interpreter(main_func, main_params)?
+        };
 
-            let result = executor.execute()?;
-            if let Some(v) = result {
-                Ok(v.to_string())
-            } else {
-                Ok(String::new())
+        Ok(result)
+    }
+}
+
+impl WasmInterpreter<'_> {
+    fn run_jit(&self, main_func: FuncDecl, main_params: Vec<WasmValue>) -> Result<String> {
+        let mut compiler = X86JitCompiler::new();
+        let main_codeptr = compiler.compile(Rc::clone(&self.module))?;
+
+        let result = match main_func.get_sig().results()[0] {
+            wasmparser::ValType::I32 => {
+                let f: I32ReturnFunc = unsafe { std::mem::transmute(main_codeptr) };
+                f().to_string()
             }
-        }
+            wasmparser::ValType::F64 => {
+                let f: F64ReturnFunc = unsafe { std::mem::transmute(main_codeptr) };
+                f().to_string()
+            }
+            _ => unimplemented!(),
+        };
+
+        Ok(result)
+    }
+
+    fn run_interpreter(&self, main_func: FuncDecl, main_params: Vec<WasmValue>) -> Result<String> {
+        let mut executor = WasmFunctionExecutorImpl::new(
+            main_func,
+            Rc::clone(&self.module),
+            Rc::clone(&self.mem),
+            Some(main_params),
+        );
+
+        let result = executor.execute()?;
+        let result = match result {
+            Some(v) => v.to_string(),
+            None => String::new(),
+        };
+
+        Ok(result)
     }
 }
 

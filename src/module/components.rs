@@ -10,7 +10,7 @@ pub struct ImportSet<'a> {
     pub num_globals: u32,
 }
 
-impl<'a> ImportSet<'a> {
+impl ImportSet<'_> {
     pub fn get_num_imports(&self) -> usize {
         self.imports.len()
     }

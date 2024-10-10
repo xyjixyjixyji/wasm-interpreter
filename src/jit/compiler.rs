@@ -1,11 +1,16 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use super::regalloc::{Register, X64Register, X86RegisterAllocator};
 use super::WasmJitCompiler;
+use crate::jit::I32ReturnFunc;
 use crate::module::components::FuncDecl;
 use crate::module::insts::Instruction;
 use crate::module::wasm_module::WasmModule;
 
 use anyhow::Result;
-use monoasm::{CodePtr, Disp, Imm, JitMemory, Reg, Rm, Scale};
+use debug_cell::RefCell;
+use monoasm::{CodePtr, DestLabel, Disp, Imm, JitMemory, Reg, Rm, Scale};
 use monoasm_macro::monoasm;
 
 // Jit compile through abstract interpretation
@@ -24,12 +29,50 @@ impl X86JitCompiler {
 }
 
 impl WasmJitCompiler for X86JitCompiler {
-    fn compile(&mut self, fdecl: &FuncDecl) -> Result<CodePtr> {
-        let mut codeptr = self.jit.get_current_address();
+    fn compile(&mut self, module: Rc<RefCell<WasmModule>>) -> Result<CodePtr> {
+        // make labels for all functions
+        let mut func_to_label = HashMap::new();
+        for (i, _) in module.borrow().get_funcs().iter().enumerate() {
+            let label = self.jit.label();
+            func_to_label.insert(i, label);
+        }
+
+        for (i, fdecl) in module.borrow().get_funcs().iter().enumerate() {
+            let func_begin_label = func_to_label.get(&i).unwrap();
+            self.compile_func(fdecl, *func_begin_label, &func_to_label)?;
+        }
+
+        let main_index = module.borrow().get_main_index().unwrap();
+        let main_label = func_to_label.get(&(main_index as usize)).unwrap();
+
+        self.jit.finalize();
+
+        let codeptr = self.jit.get_label_u64(*main_label);
+
+        Ok(unsafe { std::mem::transmute::<u64, CodePtr>(codeptr) })
+    }
+}
+
+impl X86JitCompiler {
+    fn compile_func(
+        &mut self,
+        fdecl: &FuncDecl,
+        func_begin_label: DestLabel,
+        func_to_label: &HashMap<usize, DestLabel>,
+    ) -> Result<()> {
+        monoasm!(
+            &mut self.jit,
+            func_begin_label:
+        );
+
         for inst in fdecl.get_insts() {
             match inst {
+                Instruction::I32Const { value } => {
+                    let reg = self.reg_allocator.next();
+                    self.mov_i32_to_reg(*value, reg);
+                }
                 Instruction::Unreachable => todo!(),
-                Instruction::Nop => {}
+                Instruction::Nop => todo!(),
                 Instruction::Block { ty } => todo!(),
                 Instruction::Loop { ty } => todo!(),
                 Instruction::If { ty } => todo!(),
@@ -39,7 +82,6 @@ impl WasmJitCompiler for X86JitCompiler {
                 Instruction::BrIf { rel_depth } => todo!(),
                 Instruction::BrTable { table } => todo!(),
                 Instruction::Return => todo!(),
-                // For function calls, before we jit compile any program
                 Instruction::Call { func_idx } => todo!(),
                 Instruction::CallIndirect {
                     type_index,
@@ -64,10 +106,6 @@ impl WasmJitCompiler for X86JitCompiler {
                 Instruction::I32Store16 { memarg } => todo!(),
                 Instruction::MemorySize { mem } => todo!(),
                 Instruction::MemoryGrow { mem } => todo!(),
-                Instruction::I32Const { value } => {
-                    let reg = self.reg_allocator.next();
-                    self.mov_i32_to_reg(*value, reg);
-                }
                 Instruction::F64Const { value } => todo!(),
                 Instruction::I32Unop(_) => todo!(),
                 Instruction::I32Binp(_) => todo!(),
@@ -81,80 +119,19 @@ impl WasmJitCompiler for X86JitCompiler {
             &mut self.jit,
             ret;
         );
-
-        Ok(codeptr)
+        Ok(())
     }
 }
 
 impl X86JitCompiler {
     fn mov_i32_to_reg(&mut self, value: i32, reg: Register) {
         match reg {
-            Register::Reg(r) => match r {
-                X64Register::Rax => monoasm!(
+            Register::Reg(r) => {
+                monoasm!(
                     &mut self.jit,
-                    movq rax, (value);
-                ),
-                X64Register::Rbx => monoasm!(
-                    &mut self.jit,
-                    movq rbx, (value);
-                ),
-                X64Register::Rcx => monoasm!(
-                    &mut self.jit,
-                    movq rcx, (value);
-                ),
-                X64Register::Rdx => monoasm!(
-                    &mut self.jit,
-                    movq rdx, (value);
-                ),
-                X64Register::Rsi => monoasm!(
-                    &mut self.jit,
-                    movq rsi, (value);
-                ),
-                X64Register::Rdi => monoasm!(
-                    &mut self.jit,
-                    movq rdi, (value);
-                ),
-                X64Register::Rbp => monoasm!(
-                    &mut self.jit,
-                    movq rbp, (value);
-                ),
-                X64Register::Rsp => monoasm!(
-                    &mut self.jit,
-                    movq rsp, (value);
-                ),
-                X64Register::R8 => monoasm!(
-                    &mut self.jit,
-                    movq r8, (value);
-                ),
-                X64Register::R9 => monoasm!(
-                    &mut self.jit,
-                    movq r9, (value);
-                ),
-                X64Register::R10 => monoasm!(
-                    &mut self.jit,
-                    movq r10, (value);
-                ),
-                X64Register::R11 => monoasm!(
-                    &mut self.jit,
-                    movq r11, (value);
-                ),
-                X64Register::R12 => monoasm!(
-                    &mut self.jit,
-                    movq r12, (value);
-                ),
-                X64Register::R13 => monoasm!(
-                    &mut self.jit,
-                    movq r13, (value);
-                ),
-                X64Register::R14 => monoasm!(
-                    &mut self.jit,
-                    movq r14, (value);
-                ),
-                X64Register::R15 => monoasm!(
-                    &mut self.jit,
-                    movq r15, (value);
-                ),
-            },
+                    movq R(r.as_index()), (value);
+                );
+            }
             Register::Stack(offset) => {
                 monoasm!(
                     &mut self.jit,

@@ -57,7 +57,7 @@ pub(crate) struct WasmFunctionExecutorImpl<'a> {
     module: Rc<RefCell<WasmModule<'a>>>,
 }
 
-impl<'a> WasmFunctionExecutor for WasmFunctionExecutorImpl<'a> {
+impl WasmFunctionExecutor for WasmFunctionExecutorImpl<'_> {
     fn execute(&mut self) -> Result<Option<WasmValue>> {
         // function frame
         self.control_flow_frames.push_back(BlockControlFlowFrame {
@@ -294,7 +294,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     }
 }
 
-impl<'a> WasmFunctionExecutorImpl<'a> {
+impl WasmFunctionExecutorImpl<'_> {
     pub fn inc_pc(&mut self) {
         self.pc += 1;
     }
@@ -354,7 +354,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
 }
 
 /// Instruction execution
-impl<'a> WasmFunctionExecutorImpl<'a> {
+impl WasmFunctionExecutorImpl<'_> {
     fn run_call(&mut self, func_idx: u32) -> Result<()> {
         // first try to run host function
         let runned = self.try_run_host_func(func_idx)?;
@@ -951,7 +951,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     }
 }
 
-impl<'a> WasmFunctionExecutorImpl<'a> {
+impl WasmFunctionExecutorImpl<'_> {
     fn try_run_host_func(&mut self, func_ind: u32) -> Result<bool> {
         let host_func_import = self
             .module
@@ -1006,7 +1006,7 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     }
 }
 
-impl<'a> WasmFunctionExecutorImpl<'a> {
+impl WasmFunctionExecutorImpl<'_> {
     fn find_closest_else(insts: &[Instruction], start: Pc) -> Option<Pc> {
         let end_pc = Self::find_matching_end(insts, start).expect("no matching end for if block");
         let mut pc = start;

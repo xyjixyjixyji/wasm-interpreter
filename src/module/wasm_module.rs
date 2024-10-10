@@ -175,4 +175,11 @@ impl<'a> WasmModule<'a> {
     pub fn get_globals_mut(&mut self) -> &mut Vec<GlobalDecl> {
         &mut self.globals
     }
+
+    pub fn get_main_index(&self) -> Option<u32> {
+        self.exports
+            .iter()
+            .find(|export| export.name == "main")
+            .map(|export| export.index)
+    }
 }
