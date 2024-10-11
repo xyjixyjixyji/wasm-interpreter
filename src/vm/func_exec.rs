@@ -559,14 +559,9 @@ impl WasmFunctionExecutorImpl<'_> {
         drop(module);
 
         let additional_pages = self.pop_operand_stack().as_i32();
-        if additional_pages <= 0 {
-            return Err(anyhow!(
-                "memory.grow: invalid additional pages of {}",
-                additional_pages
-            ));
-        }
-
-        if self.mem_size_in_pages() + additional_pages as usize > mem_limit as usize {
+        if self.mem_size_in_pages() + additional_pages as usize > mem_limit as usize
+            || additional_pages < 0
+        {
             self.push_operand_stack(WasmValue::I32(-1));
         } else {
             self.push_operand_stack(WasmValue::I32(
@@ -583,9 +578,7 @@ impl WasmFunctionExecutorImpl<'_> {
         let base = u32::try_from(self.pop_operand_stack().as_i32())?;
         let effective_addr = base + memarg.offset;
 
-        let mem = self.mem.borrow();
-        let mem_size = mem.size();
-
+        let mem_size = self.mem_size_in_bytes();
         if effective_addr + width > mem_size as u32 {
             return Err(anyhow!(
                 "out of bounds memory access, effective_addr: {}, width: {}, mem_size: {}",
@@ -596,6 +589,7 @@ impl WasmFunctionExecutorImpl<'_> {
         }
 
         // little endian read
+        let mem = self.mem.borrow();
         let mut value = 0u32;
         for i in 0..width {
             value |= (mem.0[(effective_addr + i) as usize] as u32) << (i * 8);

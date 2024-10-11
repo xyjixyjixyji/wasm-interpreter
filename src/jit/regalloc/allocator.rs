@@ -37,6 +37,10 @@ impl X86RegisterAllocator {
         self.reg_vec.push(reg);
         reg
     }
+
+    pub fn drop(&mut self) {
+        self.reg_vec.pop().expect("no register to drop");
+    }
 }
 
 impl X86RegisterAllocator {

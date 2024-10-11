@@ -17,14 +17,23 @@ use monoasm_macro::monoasm;
 pub struct X86JitCompiler {
     reg_allocator: X86RegisterAllocator,
     jit: JitMemory,
+    trap_label: DestLabel,
 }
 
 impl X86JitCompiler {
     pub fn new() -> Self {
-        Self {
+        let mut jit = JitMemory::new();
+        let trap_label = jit.label();
+
+        let mut compiler = Self {
             reg_allocator: X86RegisterAllocator::new(),
-            jit: JitMemory::new(),
-        }
+            jit,
+            trap_label,
+        };
+
+        compiler.setup_trap_entry();
+
+        compiler
     }
 }
 
@@ -37,11 +46,9 @@ impl WasmJitCompiler for X86JitCompiler {
             func_to_label.insert(i, label);
         }
 
-        let trap_label = self.setup_trap_entry();
-
         for (i, fdecl) in module.borrow().get_funcs().iter().enumerate() {
             let func_begin_label = func_to_label.get(&i).unwrap();
-            self.compile_func(fdecl, *func_begin_label, &func_to_label, trap_label)?;
+            self.compile_func(fdecl, *func_begin_label, &func_to_label, self.trap_label)?;
         }
 
         let main_index = module.borrow().get_main_index().unwrap();
@@ -75,10 +82,7 @@ impl X86JitCompiler {
                     self.mov_i32_to_reg(*value, reg);
                 }
                 Instruction::Unreachable => {
-                    monoasm!(
-                        &mut self.jit,
-                        jmp trap_label;
-                    );
+                    self.trap();
                 }
                 Instruction::Nop => {}
                 Instruction::Block { ty } => todo!(),
@@ -95,7 +99,9 @@ impl X86JitCompiler {
                     type_index,
                     table_index,
                 } => todo!(),
-                Instruction::Drop => todo!(),
+                Instruction::Drop => {
+                    self.reg_allocator.drop();
+                }
                 Instruction::Select => todo!(),
                 Instruction::LocalGet { local_idx } => todo!(),
                 Instruction::LocalSet { local_idx } => todo!(),
@@ -149,8 +155,12 @@ impl X86JitCompiler {
         }
     }
 
+    fn mov_f32_to_reg(&mut self, value: f32, reg: Register) {
+        todo!()
+    }
+
     fn setup_trap_entry(&mut self) -> DestLabel {
-        let trap_label = self.jit.label();
+        let trap_label = self.trap_label;
         monoasm!(
             &mut self.jit,
             trap_label:
@@ -159,5 +169,13 @@ impl X86JitCompiler {
         );
 
         trap_label
+    }
+
+    fn trap(&mut self) {
+        let trap_label = self.trap_label;
+        monoasm!(
+            &mut self.jit,
+            jmp trap_label;
+        );
     }
 }
