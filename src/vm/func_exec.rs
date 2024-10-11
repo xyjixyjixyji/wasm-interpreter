@@ -695,13 +695,10 @@ impl WasmFunctionExecutorImpl<'_> {
             I32Binop::Add => Ok(WasmValue::I32(a.wrapping_add(b))),
             I32Binop::Sub => Ok(WasmValue::I32(a.wrapping_sub(b))),
             I32Binop::Mul => Ok(WasmValue::I32(a.wrapping_mul(b))),
-            I32Binop::DivS => {
-                if b == 0 {
-                    Err(anyhow!("division by zero"))
-                } else {
-                    Ok(WasmValue::I32(a.wrapping_div(b)))
-                }
-            }
+            I32Binop::DivS => match a.checked_div(b) {
+                Some(v) => Ok(WasmValue::I32(v)),
+                None => Err(anyhow!("division overflow")),
+            },
             I32Binop::DivU => {
                 if b == 0 {
                     Err(anyhow!("division by zero"))
@@ -722,9 +719,7 @@ impl WasmFunctionExecutorImpl<'_> {
                 if b == 0 {
                     Err(anyhow!("division by zero"))
                 } else {
-                    Ok(WasmValue::I32(i32::try_from(
-                        (a as u32).wrapping_rem(b as u32),
-                    )?))
+                    Ok(WasmValue::I32((a as u32).wrapping_rem(b as u32) as i32))
                 }
             }
             I32Binop::And => Ok(WasmValue::I32(a & b)),
@@ -764,7 +759,7 @@ impl WasmFunctionExecutorImpl<'_> {
             }
             F64Unop::I32TruncF64U => {
                 let f = a.trunc();
-                if f.is_nan() || f < 0.0 || f > (i32::MAX as f64) || f.is_infinite() {
+                if f.is_nan() || f < 0.0 || f > (u32::MAX as f64) || f.is_infinite() {
                     Err(anyhow!("f64.trunc_u: value out of range"))
                 } else {
                     Ok(WasmValue::I32((f as u32) as i32))
