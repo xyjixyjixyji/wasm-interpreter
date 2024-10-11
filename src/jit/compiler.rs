@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::regalloc::{Register, X64Register, X86RegisterAllocator, REG_TEMP, REG_TEMP2};
-use super::WasmJitCompiler;
+use super::{JitLinearMemory, WasmJitCompiler};
 use crate::module::components::FuncDecl;
 use crate::module::insts::{I32Binop, Instruction};
 use crate::module::wasm_module::WasmModule;
+use crate::vm::WASM_DEFAULT_PAGE_SIZE_BYTE;
 
 use anyhow::Result;
 use debug_cell::RefCell;
@@ -17,6 +18,7 @@ pub struct X86JitCompiler {
     reg_allocator: X86RegisterAllocator,
     jit: JitMemory,
     trap_label: DestLabel,
+    jit_linear_mem: JitLinearMemory,
 }
 
 impl X86JitCompiler {
@@ -28,6 +30,7 @@ impl X86JitCompiler {
             reg_allocator: X86RegisterAllocator::new(),
             jit,
             trap_label,
+            jit_linear_mem: JitLinearMemory::new(),
         };
 
         compiler.setup_trap_entry();
@@ -37,7 +40,11 @@ impl X86JitCompiler {
 }
 
 impl WasmJitCompiler for X86JitCompiler {
-    fn compile(&mut self, module: Rc<RefCell<WasmModule>>) -> Result<CodePtr> {
+    fn compile(
+        &mut self,
+        module: Rc<RefCell<WasmModule>>,
+        initial_mem_size_in_byte: u64,
+    ) -> Result<CodePtr> {
         // make labels for all functions
         let mut func_to_label = HashMap::new();
         for (i, _) in module.borrow().get_funcs().iter().enumerate() {
@@ -45,20 +52,23 @@ impl WasmJitCompiler for X86JitCompiler {
             func_to_label.insert(i, label);
         }
 
+        // setup vm_entry
+        let main_index = module.borrow().get_main_index().unwrap();
+        let main_label = func_to_label.get(&(main_index as usize)).unwrap();
+        let vm_entry_label = self.setup_vm_entry(*main_label, initial_mem_size_in_byte);
+
+        // compile all functions
         for (i, fdecl) in module.borrow().get_funcs().iter().enumerate() {
             let func_begin_label = func_to_label.get(&i).unwrap();
             self.compile_func(fdecl, *func_begin_label, &func_to_label, self.trap_label)?;
         }
 
-        let main_index = module.borrow().get_main_index().unwrap();
-        let main_label = func_to_label.get(&(main_index as usize)).unwrap();
-
         self.jit.finalize();
 
-        let codeptr = self.jit.get_label_u64(*main_label);
+        // return vm_entry address
+        let codeptr = self.jit.get_label_u64(vm_entry_label);
 
         log::debug!("\n{}", self.jit.dump_code().unwrap());
-
         Ok(unsafe { std::mem::transmute::<u64, CodePtr>(codeptr) })
     }
 }
@@ -98,6 +108,7 @@ impl X86JitCompiler {
                 Instruction::BrIf { rel_depth } => todo!(),
                 Instruction::BrTable { table } => todo!(),
                 Instruction::Return => todo!(),
+                // TODO: save all caller saved registers
                 Instruction::Call { func_idx } => todo!(),
                 Instruction::CallIndirect {
                     type_index,
@@ -306,6 +317,32 @@ impl X86JitCompiler {
         trap_label
     }
 
+    fn setup_vm_entry(
+        &mut self,
+        main_label: DestLabel,
+        initial_mem_size_in_byte: u64,
+    ) -> DestLabel {
+        let vm_entry_label = self.jit.label();
+        monoasm!(
+            &mut self.jit,
+            vm_entry_label:
+        );
+
+        self.jit_linear_mem
+            .save_base(&mut self.jit, initial_mem_size_in_byte);
+
+        let npages = initial_mem_size_in_byte / WASM_DEFAULT_PAGE_SIZE_BYTE as u64;
+        self.jit_linear_mem
+            .save_size_in_pages(&mut self.jit, npages);
+
+        monoasm!(
+            &mut self.jit,
+            jmp main_label;
+        );
+
+        vm_entry_label
+    }
+
     fn trap(&mut self) {
         let trap_label = self.trap_label;
         monoasm!(
@@ -503,7 +540,9 @@ impl X86JitCompiler {
 
         // Calculate total stack size: locals + max stack depth
         // Each stack slot is 8 bytes (for alignment)
-        let total_stack_size = (nlocals + max_stack_depth) * 8;
+        //
+        // +1 for storing the current memory size
+        let total_stack_size = (nlocals + max_stack_depth + 1) * 8;
 
         // Align stack size to 16 bytes (common requirement for x86-64)
         (total_stack_size + 15) & !15

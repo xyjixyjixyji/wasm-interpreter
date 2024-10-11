@@ -7,7 +7,7 @@ pub use interpreter::WasmInterpreter;
 
 mod func_exec;
 
-const WASM_DEFAULT_PAGE_SIZE_BYTE: usize = 65536;
+pub const WASM_DEFAULT_PAGE_SIZE_BYTE: usize = 65536;
 
 pub trait WasmVm {
     /// Run the interpreter,the final result will be returned as a string.

@@ -1,3 +1,5 @@
+#![feature(box_as_ptr)]
+
 use std::env;
 
 use module::{value_type::WasmValue, wasm_module::WasmModule};

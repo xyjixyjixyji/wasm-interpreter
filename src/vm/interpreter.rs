@@ -66,17 +66,19 @@ impl WasmInterpreter<'_> {
         register_trap_handler();
 
         // jit compile all functions
+        // vm_entry is an opaque entry point to the typed main function
         let mut compiler = X86JitCompiler::new();
-        let main_codeptr = compiler.compile(Rc::clone(&self.module))?;
+        let vm_entry =
+            compiler.compile(Rc::clone(&self.module), self.mem.borrow().0.len() as u64)?;
 
         // invoke main
         let result = match main_func.get_sig().results()[0] {
             wasmparser::ValType::I32 => {
-                let f: I32ReturnFunc = unsafe { std::mem::transmute(main_codeptr) };
+                let f: I32ReturnFunc = unsafe { std::mem::transmute(vm_entry) };
                 f().to_string()
             }
             wasmparser::ValType::F64 => {
-                let f: F64ReturnFunc = unsafe { std::mem::transmute(main_codeptr) };
+                let f: F64ReturnFunc = unsafe { std::mem::transmute(vm_entry) };
                 f().to_string()
             }
             _ => unimplemented!(),
