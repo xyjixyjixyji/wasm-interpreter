@@ -11,3 +11,4 @@ log = "0.4.22"
 wasmparser = "0.216.0"
 monoasm = { git = "https://github.com/sisshiki1969/monoasm" }
 monoasm_macro = { git = "https://github.com/sisshiki1969/monoasm" }
+libc = "0.2"

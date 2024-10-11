@@ -4,7 +4,7 @@ use debug_cell::RefCell;
 use std::rc::Rc;
 
 use crate::{
-    jit::{F64ReturnFunc, I32ReturnFunc, WasmJitCompiler, X86JitCompiler},
+    jit::{register_trap_handler, F64ReturnFunc, I32ReturnFunc, WasmJitCompiler, X86JitCompiler},
     module::{
         components::FuncDecl, value_type::WasmValue, wasm_module::WasmModule,
         wasmops::WASM_OP_I32_CONST,
@@ -61,9 +61,15 @@ impl WasmVm for WasmInterpreter<'_> {
 
 impl WasmInterpreter<'_> {
     fn run_jit(&self, main_func: FuncDecl, main_params: Vec<WasmValue>) -> Result<String> {
+        // register trap handler for SIGSEGV, which is used when wasm code has
+        // error. There, we print "!trap" and exit.
+        register_trap_handler();
+
+        // jit compile all functions
         let mut compiler = X86JitCompiler::new();
         let main_codeptr = compiler.compile(Rc::clone(&self.module))?;
 
+        // invoke main
         let result = match main_func.get_sig().results()[0] {
             wasmparser::ValType::I32 => {
                 let f: I32ReturnFunc = unsafe { std::mem::transmute(main_codeptr) };

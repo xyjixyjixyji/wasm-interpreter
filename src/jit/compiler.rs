@@ -37,9 +37,11 @@ impl WasmJitCompiler for X86JitCompiler {
             func_to_label.insert(i, label);
         }
 
+        let trap_label = self.setup_trap_entry();
+
         for (i, fdecl) in module.borrow().get_funcs().iter().enumerate() {
             let func_begin_label = func_to_label.get(&i).unwrap();
-            self.compile_func(fdecl, *func_begin_label, &func_to_label)?;
+            self.compile_func(fdecl, *func_begin_label, &func_to_label, trap_label)?;
         }
 
         let main_index = module.borrow().get_main_index().unwrap();
@@ -59,6 +61,7 @@ impl X86JitCompiler {
         fdecl: &FuncDecl,
         func_begin_label: DestLabel,
         func_to_label: &HashMap<usize, DestLabel>,
+        trap_label: DestLabel,
     ) -> Result<()> {
         monoasm!(
             &mut self.jit,
@@ -71,8 +74,13 @@ impl X86JitCompiler {
                     let reg = self.reg_allocator.next();
                     self.mov_i32_to_reg(*value, reg);
                 }
-                Instruction::Unreachable => todo!(),
-                Instruction::Nop => todo!(),
+                Instruction::Unreachable => {
+                    monoasm!(
+                        &mut self.jit,
+                        jmp trap_label;
+                    );
+                }
+                Instruction::Nop => {}
                 Instruction::Block { ty } => todo!(),
                 Instruction::Loop { ty } => todo!(),
                 Instruction::If { ty } => todo!(),
@@ -139,5 +147,17 @@ impl X86JitCompiler {
                 );
             }
         }
+    }
+
+    fn setup_trap_entry(&mut self) -> DestLabel {
+        let trap_label = self.jit.label();
+        monoasm!(
+            &mut self.jit,
+            trap_label:
+                movq rax, 0;
+                movq [rax], 1;
+        );
+
+        trap_label
     }
 }
