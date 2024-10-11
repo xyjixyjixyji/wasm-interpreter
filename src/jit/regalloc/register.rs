@@ -41,9 +41,53 @@ impl X64Register {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum X86FpRegister {
+    Xmm0,
+    Xmm1,
+    Xmm2,
+    Xmm3,
+    Xmm4,
+    Xmm5,
+    Xmm6,
+    Xmm7,
+    Xmm8,
+    Xmm9,
+    Xmm10,
+    Xmm11,
+    Xmm12,
+    Xmm13,
+    Xmm14,
+    Xmm15,
+}
+
+impl X86FpRegister {
+    pub fn as_index(&self) -> u64 {
+        match self {
+            X86FpRegister::Xmm0 => 0,
+            X86FpRegister::Xmm1 => 1,
+            X86FpRegister::Xmm2 => 2,
+            X86FpRegister::Xmm3 => 3,
+            X86FpRegister::Xmm4 => 4,
+            X86FpRegister::Xmm5 => 5,
+            X86FpRegister::Xmm6 => 6,
+            X86FpRegister::Xmm7 => 7,
+            X86FpRegister::Xmm8 => 8,
+            X86FpRegister::Xmm9 => 9,
+            X86FpRegister::Xmm10 => 10,
+            X86FpRegister::Xmm11 => 11,
+            X86FpRegister::Xmm12 => 12,
+            X86FpRegister::Xmm13 => 13,
+            X86FpRegister::Xmm14 => 14,
+            X86FpRegister::Xmm15 => 15,
+        }
+    }
+}
+
+pub const REG_TEMP: X64Register = X64Register::R14;
 pub const REG_MEMORY_BASE: X64Register = X64Register::R15;
 
-pub const ALLOC_POOL: [X64Register; 13] = [
+pub const ALLOC_POOL: [X64Register; 12] = [
     X64Register::Rax,
     X64Register::Rdi,
     X64Register::Rsi,
@@ -56,12 +100,31 @@ pub const ALLOC_POOL: [X64Register; 13] = [
     X64Register::R11,
     X64Register::R12,
     X64Register::R13,
-    X64Register::R14,
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub const FP_ALLOC_POOL: [X86FpRegister; 16] = [
+    X86FpRegister::Xmm0,
+    X86FpRegister::Xmm1,
+    X86FpRegister::Xmm2,
+    X86FpRegister::Xmm3,
+    X86FpRegister::Xmm4,
+    X86FpRegister::Xmm5,
+    X86FpRegister::Xmm6,
+    X86FpRegister::Xmm7,
+    X86FpRegister::Xmm8,
+    X86FpRegister::Xmm9,
+    X86FpRegister::Xmm10,
+    X86FpRegister::Xmm11,
+    X86FpRegister::Xmm12,
+    X86FpRegister::Xmm13,
+    X86FpRegister::Xmm14,
+    X86FpRegister::Xmm15,
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Register {
     Reg(X64Register),
+    FpReg(X86FpRegister),
     Stack(usize), // offset from Rsp
 }
 
@@ -69,6 +132,7 @@ impl std::fmt::Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Register::Reg(r) => write!(f, "R{}", r.as_index()),
+            Register::FpReg(r) => write!(f, "xmm{}", r.as_index()),
             Register::Stack(offset) => write!(f, "[%rsp + {}]", offset),
         }
     }

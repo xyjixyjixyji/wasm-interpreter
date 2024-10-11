@@ -160,10 +160,6 @@ impl<'a> WasmModule<'a> {
         self.mems.first()
     }
 
-    pub fn get_exports(&self) -> &Vec<Export<'a>> {
-        &self.exports
-    }
-
     pub fn get_globals(&self) -> &Vec<GlobalDecl> {
         &self.globals
     }

@@ -4,7 +4,7 @@
 // During the instruction iteration, it updates the register vector accordingly
 // based on the Wasm operand stack.
 
-use super::register::{Register, ALLOC_POOL};
+use super::register::{Register, ALLOC_POOL, FP_ALLOC_POOL};
 
 pub struct X86RegisterAllocator {
     // Register vector, which is the currently used registers, representing
@@ -24,17 +24,33 @@ impl X86RegisterAllocator {
         }
     }
 
+    /// Get the stack top, which is the last element of the register vector.
+    pub fn top(&self) -> Register {
+        self.reg_vec.last().expect("no register").clone()
+    }
+
+    /// Get the stack depth in slot, which is the number of 64-bit values on the stack.
+    pub fn stack_depth_in_slot(&self) -> usize {
+        self.stack_offset
+    }
+
     /// Allocate a position to hold the value.
     pub fn next(&mut self) -> Register {
         let reg = self.next_reg();
-        self.reg_vec.push(reg);
+        self.reg_vec.push(reg.clone());
+        reg
+    }
+
+    pub fn next_xmm(&mut self) -> Register {
+        let reg = self.next_xmm_reg();
+        self.reg_vec.push(reg.clone());
         reg
     }
 
     /// Allocate a position to spill the value. Used for wasm local.
     pub fn new_spill(&mut self) -> Register {
         let reg = self.next_spill();
-        self.reg_vec.push(reg);
+        self.reg_vec.push(reg.clone());
         reg
     }
 
@@ -51,6 +67,15 @@ impl X86RegisterAllocator {
         for reg in ALLOC_POOL {
             if !self.reg_vec.contains(&Register::Reg(reg)) {
                 return Register::Reg(reg);
+            }
+        }
+        self.next_spill()
+    }
+
+    fn next_xmm_reg(&mut self) -> Register {
+        for reg in FP_ALLOC_POOL {
+            if !self.reg_vec.contains(&Register::FpReg(reg)) {
+                return Register::FpReg(reg);
             }
         }
         self.next_spill()
