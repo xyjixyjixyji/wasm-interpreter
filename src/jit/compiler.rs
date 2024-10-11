@@ -108,7 +108,7 @@ impl X86JitCompiler {
                 Instruction::MemoryGrow { mem } => todo!(),
                 Instruction::F64Const { value } => todo!(),
                 Instruction::I32Unop(_) => todo!(),
-                Instruction::I32Binp(_) => todo!(),
+                Instruction::I32Binop(_) => todo!(),
                 Instruction::F64Unop(_) => todo!(),
                 Instruction::F64Binop(_) => todo!(),
             }

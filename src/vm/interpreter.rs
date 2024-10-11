@@ -110,7 +110,7 @@ impl<'a> WasmInterpreter<'a> {
         WasmInterpreter {
             module: Rc::new(RefCell::new(module)),
             mem: Rc::new(RefCell::new(mem)),
-            jit_mode: jit_mode,
+            jit_mode,
         }
     }
 }

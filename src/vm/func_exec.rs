@@ -4,7 +4,7 @@ use wasmparser::{BinaryReader, BlockType, TypeRef, ValType, WasmFeatures};
 
 use std::{collections::VecDeque, rc::Rc};
 
-use super::{interpreter::LinearMemory, WasmFunctionExecutor};
+use super::{interpreter::LinearMemory, WasmFunctionExecutor, WASM_DEFAULT_PAGE_SIZE_BYTE};
 use crate::module::{
     components::FuncDecl,
     insts::{BrTable, F64Binop, F64Unop, I32Binop, I32Unop, Instruction, MemArg},
@@ -240,7 +240,7 @@ impl WasmFunctionExecutor for WasmFunctionExecutorImpl<'_> {
                     self.run_i32_unop(&i32_unop)?;
                     self.inc_pc();
                 }
-                Instruction::I32Binp(i32_binop) => {
+                Instruction::I32Binop(i32_binop) => {
                     self.run_i32_binop(&i32_binop)?;
                     self.inc_pc();
                 }
@@ -313,7 +313,11 @@ impl WasmFunctionExecutorImpl<'_> {
             .expect("operand stack underflow")
     }
 
-    pub fn mem_size(&self) -> usize {
+    pub fn mem_size_in_pages(&self) -> usize {
+        self.mem.borrow().size() / WASM_DEFAULT_PAGE_SIZE_BYTE
+    }
+
+    pub fn mem_size_in_bytes(&self) -> usize {
         self.mem.borrow().size()
     }
 
@@ -538,8 +542,8 @@ impl WasmFunctionExecutorImpl<'_> {
             return Err(anyhow!("memory.size: invalid memory index"));
         }
 
-        self.operand_stack
-            .push_back(WasmValue::I32(i32::try_from(self.mem_size()).unwrap()));
+        let npages = self.mem_size_in_pages();
+        self.push_operand_stack(WasmValue::I32(i32::try_from(npages).unwrap()));
 
         Ok(())
     }
@@ -549,11 +553,28 @@ impl WasmFunctionExecutorImpl<'_> {
             return Err(anyhow!("memory.grow: invalid memory index"));
         }
 
-        let additional_pages = self.pop_operand_stack().as_i32();
-        self.grow_mem(u32::try_from(additional_pages)?);
+        // memory size limit
+        let module = self.module.borrow();
+        let mem_limit = module.get_memory().unwrap().maximum.unwrap();
+        drop(module);
 
-        self.operand_stack
-            .push_back(WasmValue::I32(i32::try_from(self.mem_size()).unwrap()));
+        let additional_pages = self.pop_operand_stack().as_i32();
+        if additional_pages <= 0 {
+            return Err(anyhow!(
+                "memory.grow: invalid additional pages of {}",
+                additional_pages
+            ));
+        }
+
+        if self.mem_size_in_pages() + additional_pages as usize > mem_limit as usize {
+            self.push_operand_stack(WasmValue::I32(-1));
+        } else {
+            self.push_operand_stack(WasmValue::I32(
+                i32::try_from(self.mem_size_in_pages()).unwrap(),
+            ));
+
+            self.grow_mem(u32::try_from(additional_pages)?);
+        }
 
         Ok(())
     }
@@ -987,7 +1008,7 @@ impl WasmFunctionExecutorImpl<'_> {
                 let addr = self.pop_operand_stack().as_i32();
                 let mem = self.mem.borrow();
 
-                if (addr + len) as usize > self.mem_size() {
+                if (addr + len) as usize > self.mem_size_in_bytes() {
                     return Err(anyhow!("out of bounds memory access"));
                 }
 
