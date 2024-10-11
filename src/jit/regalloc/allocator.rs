@@ -26,7 +26,7 @@ impl X86RegisterAllocator {
 
     /// Get the stack top, which is the last element of the register vector.
     pub fn top(&self) -> Register {
-        self.reg_vec.last().expect("no register").clone()
+        *self.reg_vec.last().expect("no register")
     }
 
     /// Get the stack depth in slot, which is the number of 64-bit values on the stack.
@@ -37,25 +37,29 @@ impl X86RegisterAllocator {
     /// Allocate a position to hold the value.
     pub fn next(&mut self) -> Register {
         let reg = self.next_reg();
-        self.reg_vec.push(reg.clone());
+        self.reg_vec.push(reg);
         reg
     }
 
     pub fn next_xmm(&mut self) -> Register {
         let reg = self.next_xmm_reg();
-        self.reg_vec.push(reg.clone());
+        self.reg_vec.push(reg);
         reg
     }
 
     /// Allocate a position to spill the value. Used for wasm local.
     pub fn new_spill(&mut self) -> Register {
         let reg = self.next_spill();
-        self.reg_vec.push(reg.clone());
+        self.reg_vec.push(reg);
         reg
     }
 
-    pub fn drop(&mut self) {
-        self.reg_vec.pop().expect("no register to drop");
+    pub fn push(&mut self, reg: Register) {
+        self.reg_vec.push(reg);
+    }
+
+    pub fn pop(&mut self) -> Register {
+        self.reg_vec.pop().expect("no register to drop")
     }
 }
 

@@ -84,10 +84,11 @@ impl X86FpRegister {
     }
 }
 
-pub const REG_TEMP: X64Register = X64Register::R14;
+pub const REG_TEMP: X64Register = X64Register::R13;
+pub const REG_TEMP2: X64Register = X64Register::R14;
 pub const REG_MEMORY_BASE: X64Register = X64Register::R15;
 
-pub const ALLOC_POOL: [X64Register; 12] = [
+pub const ALLOC_POOL: [X64Register; 11] = [
     X64Register::Rax,
     X64Register::Rdi,
     X64Register::Rsi,
@@ -99,7 +100,6 @@ pub const ALLOC_POOL: [X64Register; 12] = [
     X64Register::Rbx,
     X64Register::R11,
     X64Register::R12,
-    X64Register::R13,
 ];
 
 pub const FP_ALLOC_POOL: [X86FpRegister; 16] = [
@@ -121,7 +121,7 @@ pub const FP_ALLOC_POOL: [X86FpRegister; 16] = [
     X86FpRegister::Xmm15,
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Register {
     Reg(X64Register),
     FpReg(X86FpRegister),

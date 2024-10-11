@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::regalloc::{Register, X64Register, X86RegisterAllocator, REG_TEMP};
+use super::regalloc::{Register, X64Register, X86RegisterAllocator, REG_TEMP, REG_TEMP2};
 use super::WasmJitCompiler;
-use crate::jit::I32ReturnFunc;
 use crate::module::components::FuncDecl;
-use crate::module::insts::Instruction;
+use crate::module::insts::{I32Binop, Instruction};
 use crate::module::wasm_module::WasmModule;
 
 use anyhow::Result;
@@ -105,7 +104,7 @@ impl X86JitCompiler {
                     table_index,
                 } => todo!(),
                 Instruction::Drop => {
-                    self.reg_allocator.drop();
+                    self.reg_allocator.pop();
                 }
                 Instruction::Select => todo!(),
                 Instruction::LocalGet { local_idx } => todo!(),
@@ -130,7 +129,9 @@ impl X86JitCompiler {
                     self.mov_f64_to_reg(*value, reg);
                 }
                 Instruction::I32Unop(_) => todo!(),
-                Instruction::I32Binop(_) => todo!(),
+                Instruction::I32Binop(binop) => {
+                    self.compile_i32_binop(binop);
+                }
                 Instruction::F64Unop(_) => todo!(),
                 Instruction::F64Binop(_) => todo!(),
             }
@@ -147,6 +148,53 @@ impl X86JitCompiler {
         );
 
         Ok(())
+    }
+}
+
+impl X86JitCompiler {
+    // jit compile *a = a op b*
+    fn compile_i32_binop(&mut self, binop: &I32Binop) {
+        let b = self.reg_allocator.pop();
+        let a = self.reg_allocator.pop();
+
+        self.mov_reg_to_reg(Register::Reg(REG_TEMP), a);
+        self.mov_reg_to_reg(Register::Reg(REG_TEMP2), b);
+
+        match binop {
+            I32Binop::Eq => todo!(),
+            I32Binop::Ne => todo!(),
+            I32Binop::LtS => todo!(),
+            I32Binop::LtU => todo!(),
+            I32Binop::GtS => todo!(),
+            I32Binop::GtU => todo!(),
+            I32Binop::LeS => todo!(),
+            I32Binop::LeU => todo!(),
+            I32Binop::GeS => todo!(),
+            I32Binop::GeU => todo!(),
+            I32Binop::Add => {
+                monoasm!(
+                    &mut self.jit,
+                    addq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                );
+            }
+            I32Binop::Sub => todo!(),
+            I32Binop::Mul => todo!(),
+            I32Binop::DivS => todo!(),
+            I32Binop::DivU => todo!(),
+            I32Binop::RemS => todo!(),
+            I32Binop::RemU => todo!(),
+            I32Binop::And => todo!(),
+            I32Binop::Or => todo!(),
+            I32Binop::Xor => todo!(),
+            I32Binop::Shl => todo!(),
+            I32Binop::ShrS => todo!(),
+            I32Binop::ShrU => todo!(),
+            I32Binop::Rotl => todo!(),
+            I32Binop::Rotr => todo!(),
+        }
+
+        self.mov_reg_to_reg(a, Register::Reg(REG_TEMP));
+        self.reg_allocator.push(a);
     }
 }
 
@@ -207,7 +255,12 @@ impl X86JitCompiler {
                     movq xmm(fpr_dst.as_index()), [rsp + (o_src)];
                 );
             }
-            (Register::Reg(_), Register::Reg(_)) => todo!(),
+            (Register::Reg(r_dst), Register::Reg(r_src)) => {
+                monoasm!(
+                    &mut self.jit,
+                    movq R(r_dst.as_index()), R(r_src.as_index());
+                );
+            }
             (Register::Reg(r_dst), Register::FpReg(fpr_src)) => {
                 monoasm!(
                     &mut self.jit,
@@ -220,9 +273,24 @@ impl X86JitCompiler {
                     movq xmm(fpr_dst.as_index()), R(r_src.as_index());
                 );
             }
-            (Register::FpReg(_), Register::FpReg(_)) => todo!(),
-            (Register::Stack(_), Register::Reg(_)) => todo!(),
-            (Register::Stack(_), Register::FpReg(_)) => todo!(),
+            (Register::FpReg(fpr_dst), Register::FpReg(fpr_src)) => {
+                monoasm!(
+                    &mut self.jit,
+                    movq xmm(fpr_dst.as_index()), xmm(fpr_src.as_index());
+                );
+            }
+            (Register::Stack(o_dst), Register::Reg(r_src)) => {
+                monoasm!(
+                    &mut self.jit,
+                    movq [rsp + (o_dst)], R(r_src.as_index());
+                );
+            }
+            (Register::Stack(o_dst), Register::FpReg(fpr_src)) => {
+                monoasm!(
+                    &mut self.jit,
+                    movq [rsp + (o_dst)], xmm(fpr_src.as_index());
+                );
+            }
         }
     }
 
