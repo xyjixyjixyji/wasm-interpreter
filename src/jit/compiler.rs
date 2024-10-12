@@ -221,31 +221,126 @@ impl X86JitCompiler {
         self.mov_reg_to_reg(Register::Reg(REG_TEMP2), b);
 
         match binop {
-            I32Binop::Eq => todo!(),
-            I32Binop::Ne => todo!(),
-            I32Binop::LtS => todo!(),
-            I32Binop::LtU => todo!(),
-            I32Binop::GtS => todo!(),
-            I32Binop::GtU => todo!(),
-            I32Binop::LeS => todo!(),
-            I32Binop::LeU => todo!(),
-            I32Binop::GeS => todo!(),
-            I32Binop::GeU => todo!(),
+            I32Binop::Eq => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    seteq R(REG_TEMP.as_index()); // a = a == b
+                );
+            }
+            I32Binop::Ne => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    setne R(REG_TEMP.as_index()); // a = a != b
+                );
+            }
+            I32Binop::LtS => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    sets R(REG_TEMP.as_index()); // a = a < b
+                );
+            }
+            I32Binop::LtU => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    setb R(REG_TEMP.as_index()); // a = a < b
+                );
+            }
+            I32Binop::GtS => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    setgt R(REG_TEMP.as_index()); // a = a > b
+                );
+            }
+            I32Binop::GtU => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    seta R(REG_TEMP.as_index()); // a = a > b
+                );
+            }
+            I32Binop::LeS => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    setle R(REG_TEMP.as_index()); // a = a <= b
+                );
+            }
+            I32Binop::LeU => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    setbe R(REG_TEMP.as_index()); // a = a <= b
+                );
+            }
+            I32Binop::GeS => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    setge R(REG_TEMP.as_index()); // a = a >= b
+                );
+            }
+            I32Binop::GeU => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    setae R(REG_TEMP.as_index()); // a = a >= b
+                );
+            }
             I32Binop::Add => {
                 monoasm!(
                     &mut self.jit,
-                    addq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    addq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a + b
                 );
             }
-            I32Binop::Sub => todo!(),
-            I32Binop::Mul => todo!(),
+            I32Binop::Sub => {
+                monoasm!(
+                    &mut self.jit,
+                    subq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a - b
+                );
+            }
+            I32Binop::Mul => {
+                monoasm!(
+                    &mut self.jit,
+                    imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a * b
+                );
+            }
             I32Binop::DivS => todo!(),
             I32Binop::DivU => todo!(),
             I32Binop::RemS => todo!(),
             I32Binop::RemU => todo!(),
-            I32Binop::And => todo!(),
-            I32Binop::Or => todo!(),
-            I32Binop::Xor => todo!(),
+            I32Binop::And => {
+                monoasm!(
+                    &mut self.jit,
+                    andq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a & b
+                );
+            }
+            I32Binop::Or => {
+                monoasm!(
+                    &mut self.jit,
+                    orq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a | b
+                );
+            }
+            I32Binop::Xor => {
+                monoasm!(
+                    &mut self.jit,
+                    xorq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a ^ b
+                );
+            }
             I32Binop::Shl => todo!(),
             I32Binop::ShrS => todo!(),
             I32Binop::ShrU => todo!(),
