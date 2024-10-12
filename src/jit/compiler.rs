@@ -176,24 +176,8 @@ impl X86JitCompiler {
 impl X86JitCompiler {
     fn compile_i32_load(&mut self, dst: Register, base: Register, offset: u32) {
         // 1. if out of bounds, trap
-        let trap_label = self.trap_label;
-        let mem_size_addr = self.jit_linear_mem.get_mem_size_addr();
         let width = 4; // i32 is 4 bytes
-        monoasm!(
-            &mut self.jit,
-            movq R(REG_TEMP.as_index()), (mem_size_addr);
-            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // <-- reg_temp = mem_size_in_page
-            movq R(REG_TEMP2.as_index()), (WASM_DEFAULT_PAGE_SIZE_BYTE);
-            imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // <-- reg_temp = mem_size_in_byte
-        );
-        self.mov_reg_to_reg(Register::Reg(REG_TEMP2), base); // <-- reg_temp2 = base
-        monoasm!(
-            &mut self.jit,
-            addq R(REG_TEMP2.as_index()), (offset);
-            addq R(REG_TEMP2.as_index()), (width); // <-- reg_temp2 = effective_addr + width
-            cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
-            jb trap_label; // jump if mem_size < effective_addr + width
-        );
+        self.check_memory_bounds(base, offset, width);
 
         // 2. load the result into dst
         monoasm!(
@@ -208,24 +192,8 @@ impl X86JitCompiler {
 
     fn compile_i32_store(&mut self, base: Register, offset: u32, value: Register) {
         // 1. if out of bounds, trap
-        let trap_label = self.trap_label;
-        let mem_size_addr = self.jit_linear_mem.get_mem_size_addr();
         let width = 4; // i32 is 4 bytes
-        monoasm!(
-            &mut self.jit,
-            movq R(REG_TEMP.as_index()), (mem_size_addr);
-            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // <-- reg_temp = mem_size_in_page
-            movq R(REG_TEMP2.as_index()), (WASM_DEFAULT_PAGE_SIZE_BYTE);
-            imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // <-- reg_temp = mem_size_in_byte
-        );
-        self.mov_reg_to_reg(Register::Reg(REG_TEMP2), base); // <-- reg_temp2 = base
-        monoasm!(
-            &mut self.jit,
-            addq R(REG_TEMP2.as_index()), (offset);
-            addq R(REG_TEMP2.as_index()), (width); // <-- reg_temp2 = effective_addr + width
-            cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
-            jb trap_label; // jump if mem_size < effective_addr + width
-        );
+        self.check_memory_bounds(base, offset, width);
 
         // 2. store the value to dst
         monoasm!(
@@ -469,6 +437,31 @@ impl X86JitCompiler {
             popq rbx;
             addq rsp, (stack_size);
             popq rbp;
+        );
+    }
+
+    /// Check if the memory access is out of bounds, and jump to trap if so.
+    ///
+    /// Note that after this function:
+    /// - REG_TEMP will store the memory size in bytes
+    /// - REG_TEMP2 will store the effective address + width
+    fn check_memory_bounds(&mut self, base: Register, offset: u32, width: u32) {
+        let trap_label = self.trap_label;
+        let mem_size_addr = self.jit_linear_mem.get_mem_size_addr();
+        monoasm!(
+            &mut self.jit,
+            movq R(REG_TEMP.as_index()), (mem_size_addr);
+            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // <-- reg_temp = mem_size_in_page
+            movq R(REG_TEMP2.as_index()), (WASM_DEFAULT_PAGE_SIZE_BYTE);
+            imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // <-- reg_temp = mem_size_in_byte
+        );
+        self.mov_reg_to_reg(Register::Reg(REG_TEMP2), base); // <-- reg_temp2 = base
+        monoasm!(
+            &mut self.jit,
+            addq R(REG_TEMP2.as_index()), (offset);
+            addq R(REG_TEMP2.as_index()), (width); // <-- reg_temp2 = effective_addr + width
+            cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+            jb trap_label; // jump if mem_size < effective_addr + width
         );
     }
 }
