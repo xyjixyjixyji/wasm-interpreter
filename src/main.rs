@@ -1,4 +1,5 @@
 #![feature(box_as_ptr)]
+#![feature(core_intrinsics)] // for adding breakpoint when debugging
 
 use std::env;
 

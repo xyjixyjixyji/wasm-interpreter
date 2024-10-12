@@ -75,6 +75,10 @@ impl WasmInterpreter<'_> {
         let result = match main_func.get_sig().results()[0] {
             wasmparser::ValType::I32 => {
                 let f: I32ReturnFunc = unsafe { std::mem::transmute(vm_entry) };
+                // If you want to step over......
+                // unsafe {
+                //     std::intrinsics::breakpoint();
+                // }
                 f().to_string()
             }
             wasmparser::ValType::F64 => {

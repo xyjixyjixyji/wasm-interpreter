@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::regalloc::{Register, X64Register, X86RegisterAllocator, REG_TEMP, REG_TEMP2};
+use super::regalloc::{
+    Register, X64Register, X86RegisterAllocator, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2,
+};
 use super::{JitLinearMemory, WasmJitCompiler};
 use crate::module::components::FuncDecl;
 use crate::module::insts::{I32Binop, Instruction};
@@ -60,7 +62,7 @@ impl WasmJitCompiler for X86JitCompiler {
         // compile all functions
         for (i, fdecl) in module.borrow().get_funcs().iter().enumerate() {
             let func_begin_label = func_to_label.get(&i).unwrap();
-            self.compile_func(fdecl, *func_begin_label, &func_to_label, self.trap_label)?;
+            self.compile_func(fdecl, *func_begin_label, &func_to_label)?;
         }
 
         self.jit.finalize();
@@ -79,7 +81,6 @@ impl X86JitCompiler {
         fdecl: &FuncDecl,
         func_begin_label: DestLabel,
         func_to_label: &HashMap<usize, DestLabel>,
-        trap_label: DestLabel,
     ) -> Result<()> {
         monoasm!(
             &mut self.jit,
@@ -123,13 +124,23 @@ impl X86JitCompiler {
                 Instruction::LocalTee { local_idx } => todo!(),
                 Instruction::GlobalGet { global_idx } => todo!(),
                 Instruction::GlobalSet { global_idx } => todo!(),
-                Instruction::I32Load { memarg } => todo!(),
+                Instruction::I32Load { memarg } => {
+                    let base = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let dst = self.reg_allocator.next();
+                    self.compile_i32_load(dst, base, offset);
+                }
                 Instruction::F64Load { memarg } => todo!(),
                 Instruction::I32Load8S { memarg } => todo!(),
                 Instruction::I32Load8U { memarg } => todo!(),
                 Instruction::I32Load16S { memarg } => todo!(),
                 Instruction::I32Load16U { memarg } => todo!(),
-                Instruction::I32Store { memarg } => todo!(),
+                Instruction::I32Store { memarg } => {
+                    let value = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let base = self.reg_allocator.pop();
+                    self.compile_i32_store(base, offset, value);
+                }
                 Instruction::F64Store { memarg } => todo!(),
                 Instruction::I32Store8 { memarg } => todo!(),
                 Instruction::I32Store16 { memarg } => todo!(),
@@ -159,6 +170,76 @@ impl X86JitCompiler {
         );
 
         Ok(())
+    }
+}
+
+impl X86JitCompiler {
+    fn compile_i32_load(&mut self, dst: Register, base: Register, offset: u32) {
+        // 1. if out of bounds, trap
+        let trap_label = self.trap_label;
+        let mem_size_addr = self.jit_linear_mem.get_mem_size_addr();
+        let width = 4; // i32 is 4 bytes
+        monoasm!(
+            &mut self.jit,
+            movq R(REG_TEMP.as_index()), (mem_size_addr);
+            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // <-- reg_temp = mem_size_in_page
+            movq R(REG_TEMP2.as_index()), (WASM_DEFAULT_PAGE_SIZE_BYTE);
+            imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // <-- reg_temp = mem_size_in_byte
+        );
+        self.mov_reg_to_reg(Register::Reg(REG_TEMP2), base); // <-- reg_temp2 = base
+        monoasm!(
+            &mut self.jit,
+            addq R(REG_TEMP2.as_index()), (offset);
+            addq R(REG_TEMP2.as_index()), (width); // <-- reg_temp2 = effective_addr + width
+            cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+            jb trap_label; // jump if mem_size < effective_addr + width
+        );
+
+        // 2. load the result into dst
+        monoasm!(
+            &mut self.jit,
+            subq R(REG_TEMP2.as_index()), (width); // <-- reg_temp2 = effective_addr
+            addq R(REG_TEMP2.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp2 = reg_memory_base + effective_addr
+            movq R(REG_TEMP.as_index()), [R(REG_TEMP2.as_index())]; // <-- reg_temp = *reg_temp2
+        );
+
+        self.mov_reg_to_reg(dst, Register::Reg(REG_TEMP));
+    }
+
+    fn compile_i32_store(&mut self, base: Register, offset: u32, value: Register) {
+        // 1. if out of bounds, trap
+        let trap_label = self.trap_label;
+        let mem_size_addr = self.jit_linear_mem.get_mem_size_addr();
+        let width = 4; // i32 is 4 bytes
+        monoasm!(
+            &mut self.jit,
+            movq R(REG_TEMP.as_index()), (mem_size_addr);
+            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // <-- reg_temp = mem_size_in_page
+            movq R(REG_TEMP2.as_index()), (WASM_DEFAULT_PAGE_SIZE_BYTE);
+            imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // <-- reg_temp = mem_size_in_byte
+        );
+        self.mov_reg_to_reg(Register::Reg(REG_TEMP2), base); // <-- reg_temp2 = base
+        monoasm!(
+            &mut self.jit,
+            addq R(REG_TEMP2.as_index()), (offset);
+            addq R(REG_TEMP2.as_index()), (width); // <-- reg_temp2 = effective_addr + width
+            cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+            jb trap_label; // jump if mem_size < effective_addr + width
+        );
+
+        // 2. store the value to dst
+        monoasm!(
+            &mut self.jit,
+            subq R(REG_TEMP2.as_index()), (width); // <-- reg_temp2 = effective_addr
+            addq R(REG_TEMP2.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp2 = reg_memory_base + effective_addr
+        );
+
+        self.mov_reg_to_reg(Register::Reg(REG_TEMP), value); // <-- reg_temp = value
+
+        monoasm!(
+            &mut self.jit,
+            movq [R(REG_TEMP2.as_index())], R(REG_TEMP.as_index());
+        );
     }
 }
 
@@ -238,14 +319,21 @@ impl X86JitCompiler {
                     movq xmm(r.as_index()), R(REG_TEMP.as_index());
                 );
             }
-            Register::Stack(_offset) => {
-                todo!()
+            Register::Stack(offset) => {
+                monoasm!(
+                    &mut self.jit,
+                    movq [rsp + (offset)], (bits);
+                );
             }
             _ => panic!("invalid mov for f32 to normal reg"),
         }
     }
 
     fn mov_reg_to_reg(&mut self, dst: Register, src: Register) {
+        if dst == src {
+            return;
+        }
+
         match (dst, src) {
             (Register::Stack(o_dst), Register::Stack(o_src)) => {
                 monoasm!(
@@ -334,6 +422,8 @@ impl X86JitCompiler {
         let npages = initial_mem_size_in_byte / WASM_DEFAULT_PAGE_SIZE_BYTE as u64;
         self.jit_linear_mem
             .save_size_in_pages(&mut self.jit, npages);
+
+        // todo: setup locals
 
         monoasm!(
             &mut self.jit,

@@ -28,13 +28,17 @@ impl JitLinearMemory {
     }
 
     pub fn save_size_in_pages(&mut self, jit: &mut JitMemory, size: u64) {
-        let size_mem_addr = Box::<u64>::as_ptr(&self.size_mem);
+        let size_mem_addr = self.get_mem_size_addr();
         monoasm!(
             jit,
             movq R(REG_TEMP.as_index()), (size);
             movq R(REG_TEMP2.as_index()), (size_mem_addr);
             movq [R(REG_TEMP2.as_index())], R(REG_TEMP.as_index());
         )
+    }
+
+    pub fn get_mem_size_addr(&self) -> u64 {
+        Box::<u64>::as_ptr(&self.size_mem) as u64
     }
 
     pub fn read(&self, dst: Register, addr: u64, size: u32) {
