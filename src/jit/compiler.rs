@@ -319,7 +319,23 @@ impl X86JitCompiler {
                     imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a * b
                 );
             }
-            I32Binop::DivS => todo!(),
+            I32Binop::DivS => {
+                // TODO: handle div by zero or overflow (trap)
+                monoasm!(
+                    &mut self.jit,
+                    pushq R(X64Register::Rax.as_index());
+                    pushq R(X64Register::Rdx.as_index());
+                    movq R(X64Register::Rax.as_index()), R(REG_TEMP.as_index());
+                    cqo; // RDX:RAX
+                    idiv R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
+                );
+                self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rax));
+                monoasm!(
+                    &mut self.jit,
+                    popq R(X64Register::Rdx.as_index());
+                    popq R(X64Register::Rax.as_index());
+                );
+            }
             I32Binop::DivU => todo!(),
             I32Binop::RemS => todo!(),
             I32Binop::RemU => todo!(),
