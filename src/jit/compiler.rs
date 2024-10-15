@@ -319,26 +319,75 @@ impl X86JitCompiler {
                     imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a * b
                 );
             }
-            I32Binop::DivS => {
-                // TODO: handle div by zero or overflow (trap)
+            I32Binop::DivS | I32Binop::RemS => {
+                let trap_label = self.trap_label;
+                let ok_label = self.jit.label();
                 monoasm!(
                     &mut self.jit,
+                    // div by zero check
+                    testq R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index());
+                    jz trap_label;
+
+                    // overflow check
                     pushq R(X64Register::Rax.as_index());
                     pushq R(X64Register::Rdx.as_index());
+                    movq R(X64Register::Rax.as_index()), (0xFFFFFFFF80000000);
+                    cmpq R(REG_TEMP.as_index()), R(X64Register::Rax.as_index());
+                    jne ok_label;
+                    movq R(X64Register::Rax.as_index()), (0xFFFFFFFFFFFFFFFF);
+                    cmpq R(REG_TEMP2.as_index()), R(X64Register::Rax.as_index());
+                    jne ok_label;
+                    jmp trap_label;
+
+                ok_label:
                     movq R(X64Register::Rax.as_index()), R(REG_TEMP.as_index());
                     cqo; // RDX:RAX
                     idiv R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
                 );
-                self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rax));
+                if matches!(binop, I32Binop::DivS) {
+                    self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rax));
+                } else {
+                    self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rdx));
+                }
                 monoasm!(
                     &mut self.jit,
                     popq R(X64Register::Rdx.as_index());
                     popq R(X64Register::Rax.as_index());
                 );
             }
-            I32Binop::DivU => todo!(),
-            I32Binop::RemS => todo!(),
-            I32Binop::RemU => todo!(),
+            I32Binop::DivU | I32Binop::RemU => {
+                let trap_label = self.trap_label;
+                let ok_label = self.jit.label();
+                monoasm!(
+                    &mut self.jit,
+                    // div by zero check
+                    testq R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index());
+                    jz trap_label;
+
+                ok_label:
+                    pushq R(X64Register::Rax.as_index());
+                    pushq R(X64Register::Rdx.as_index());
+
+                    // Clear RDX (for unsigned division, RDX should be 0)
+                    xorq R(X64Register::Rdx.as_index()), R(X64Register::Rdx.as_index());
+
+                    // Move dividend into RAX
+                    movq R(X64Register::Rax.as_index()), R(REG_TEMP.as_index());
+
+                    // Perform the unsigned division
+                    div R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
+                );
+                if matches!(binop, I32Binop::DivU) {
+                    self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rax));
+                } else {
+                    self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rdx));
+                }
+                monoasm!(
+                    &mut self.jit,
+                    popq R(X64Register::Rdx.as_index());
+                    popq R(X64Register::Rax.as_index());
+                );
+            }
             I32Binop::And => {
                 monoasm!(
                     &mut self.jit,
