@@ -68,8 +68,11 @@ impl WasmInterpreter<'_> {
         // jit compile all functions
         // vm_entry is an opaque entry point to the typed main function
         let mut compiler = X86JitCompiler::new();
-        let vm_entry =
-            compiler.compile(Rc::clone(&self.module), self.mem.borrow().0.len() as u64)?;
+        let vm_entry = compiler.compile(
+            Rc::clone(&self.module),
+            self.mem.borrow().0.len() as u64,
+            main_params,
+        )?;
 
         // invoke main
         let result = match main_func.get_sig().results()[0] {

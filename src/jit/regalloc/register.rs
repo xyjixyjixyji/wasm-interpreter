@@ -39,6 +39,18 @@ impl X64Register {
             X64Register::R15 => 15,
         }
     }
+
+    pub fn from_ith_argument(i: u32) -> X64Register {
+        match i {
+            0 => X64Register::Rdi,
+            1 => X64Register::Rsi,
+            2 => X64Register::Rdx,
+            3 => X64Register::Rcx,
+            4 => X64Register::R8,
+            5 => X64Register::R9,
+            _ => panic!("invalid argument index: {}", i),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

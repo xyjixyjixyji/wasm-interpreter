@@ -7,6 +7,7 @@ use super::regalloc::{
 use super::{JitLinearMemory, WasmJitCompiler};
 use crate::module::components::FuncDecl;
 use crate::module::insts::{I32Binop, Instruction};
+use crate::module::value_type::WasmValue;
 use crate::module::wasm_module::WasmModule;
 use crate::vm::WASM_DEFAULT_PAGE_SIZE_BYTE;
 
@@ -14,6 +15,13 @@ use anyhow::Result;
 use debug_cell::RefCell;
 use monoasm::{CodePtr, DestLabel, Disp, Imm, JitMemory, Reg, Rm, Scale};
 use monoasm_macro::monoasm;
+use wasmparser::ValType;
+
+#[derive(Debug, Clone, Copy)]
+enum ValueType {
+    I32,
+    F64,
+}
 
 // Jit compile through abstract interpretation
 pub struct X86JitCompiler {
@@ -46,9 +54,10 @@ impl WasmJitCompiler for X86JitCompiler {
         &mut self,
         module: Rc<RefCell<WasmModule>>,
         initial_mem_size_in_byte: u64,
+        main_params: Vec<WasmValue>,
     ) -> Result<CodePtr> {
         // make labels for all functions
-        let mut func_to_label = HashMap::new();
+        let mut func_to_label: HashMap<usize, DestLabel> = HashMap::new();
         for (i, _) in module.borrow().get_funcs().iter().enumerate() {
             let label = self.jit.label();
             func_to_label.insert(i, label);
@@ -57,7 +66,8 @@ impl WasmJitCompiler for X86JitCompiler {
         // setup vm_entry
         let main_index = module.borrow().get_main_index().unwrap();
         let main_label = func_to_label.get(&(main_index as usize)).unwrap();
-        let vm_entry_label = self.setup_vm_entry(*main_label, initial_mem_size_in_byte);
+        let vm_entry_label =
+            self.setup_vm_entry(*main_label, initial_mem_size_in_byte, main_params);
 
         // compile all functions
         for (i, fdecl) in module.borrow().get_funcs().iter().enumerate() {
@@ -90,6 +100,9 @@ impl X86JitCompiler {
         let stack_size = self.get_stack_size_in_byte(fdecl);
         self.prologue(stack_size);
 
+        // setup locals
+        let local_types = self.setup_locals(fdecl);
+
         for inst in fdecl.get_insts() {
             match inst {
                 Instruction::I32Const { value } => {
@@ -119,7 +132,10 @@ impl X86JitCompiler {
                     self.reg_allocator.pop();
                 }
                 Instruction::Select => todo!(),
-                Instruction::LocalGet { local_idx } => todo!(),
+                Instruction::LocalGet { local_idx } => {
+                    let dst = self.reg_allocator.next();
+                    self.compile_local_get(dst, fdecl, *local_idx, &local_types);
+                }
                 Instruction::LocalSet { local_idx } => todo!(),
                 Instruction::LocalTee { local_idx } => todo!(),
                 Instruction::GlobalGet { global_idx } => todo!(),
@@ -174,6 +190,72 @@ impl X86JitCompiler {
 }
 
 impl X86JitCompiler {
+    fn compile_local_get(
+        &mut self,
+        dst: Register,
+        fdecl: &FuncDecl,
+        local_idx: u32,
+        local_types: &[ValueType],
+    ) {
+        let params = fdecl.get_sig().params();
+        if local_idx < params.len() as u32 {
+            // local is a param, from convention
+            if local_idx < 6 {
+                let reg = X64Register::from_ith_argument(local_idx);
+                self.mov_reg_to_reg(dst, Register::Reg(reg));
+            } else {
+                // TODO: more than 6 params, use rbp
+            }
+        } else {
+            // on stack
+            let stack_offset = self.get_local_stack_offset(fdecl, local_idx);
+            let local_type = local_types[local_idx as usize];
+            match local_type {
+                ValueType::I32 => {
+                    let stack_reg = Register::Stack(stack_offset as usize);
+                    self.compile_i32_load(dst, stack_reg, 0);
+                }
+                ValueType::F64 => todo!(),
+            }
+        }
+    }
+
+    fn compile_f64_load(&mut self, dst: Register, base: Register, offset: u32) {
+        // 1. if out of bounds, trap
+        let width = 8;
+        self.check_memory_bounds(base, offset, width);
+
+        // 2. load the result into dst
+        monoasm!(
+            &mut self.jit,
+            subq R(REG_TEMP2.as_index()), (width); // <-- reg_temp2 = effective_addr
+            addq R(REG_TEMP2.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp2 = reg_memory_base + effective_addr
+            movq R(REG_TEMP.as_index()), [R(REG_TEMP2.as_index())]; // <-- reg_temp = *reg_temp2
+        );
+
+        self.mov_reg_to_reg(dst, Register::Reg(REG_TEMP));
+    }
+
+    fn compile_f64_store(&mut self, base: Register, offset: u32, value: Register) {
+        // 1. if out of bounds, trap
+        let width = 8;
+        self.check_memory_bounds(base, offset, width);
+
+        // 2. store the value to dst
+        monoasm!(
+            &mut self.jit,
+            subq R(REG_TEMP2.as_index()), (width); // <-- reg_temp2 = effective_addr
+            addq R(REG_TEMP2.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp2 = reg_memory_base + effective_addr
+        );
+
+        self.mov_reg_to_reg(Register::Reg(REG_TEMP), value); // <-- reg_temp = value
+
+        monoasm!(
+            &mut self.jit,
+            movq [R(REG_TEMP2.as_index())], R(REG_TEMP.as_index());
+        );
+    }
+
     fn compile_i32_load(&mut self, dst: Register, base: Register, offset: u32) {
         // 1. if out of bounds, trap
         let width = 4; // i32 is 4 bytes
@@ -537,6 +619,7 @@ impl X86JitCompiler {
         &mut self,
         main_label: DestLabel,
         initial_mem_size_in_byte: u64,
+        main_params: Vec<WasmValue>,
     ) -> DestLabel {
         let vm_entry_label = self.jit.label();
         monoasm!(
@@ -544,6 +627,7 @@ impl X86JitCompiler {
             vm_entry_label:
         );
 
+        // setup linear memory info
         self.jit_linear_mem
             .save_base(&mut self.jit, initial_mem_size_in_byte);
 
@@ -551,14 +635,67 @@ impl X86JitCompiler {
         self.jit_linear_mem
             .save_size_in_pages(&mut self.jit, npages);
 
-        // todo: setup locals
+        // setup main params
+        for (i, param) in main_params.iter().enumerate() {
+            if i < 6 {
+                let reg = X64Register::from_ith_argument(i as u32);
+                match param {
+                    WasmValue::I32(v) => self.mov_i32_to_reg(*v, Register::Reg(reg)),
+                    WasmValue::F64(v) => self.mov_f64_to_reg(*v, Register::Reg(reg)),
+                }
+            } else {
+                // push the constant to stack
+                match param {
+                    WasmValue::I32(v) => self.mov_i32_to_reg(*v, Register::Reg(REG_TEMP)),
+                    WasmValue::F64(v) => self.mov_f64_to_reg(*v, Register::Reg(REG_TEMP)),
+                }
+                monoasm!(
+                    &mut self.jit,
+                    pushq R(REG_TEMP.as_index());
+                );
+            }
+        }
 
+        // jump to main
         monoasm!(
             &mut self.jit,
             jmp main_label;
         );
 
         vm_entry_label
+    }
+
+    fn setup_locals(&mut self, fdecl: &FuncDecl) -> Vec<ValueType> {
+        let mut local_types = Vec::new();
+        for params in fdecl.get_sig().params() {
+            match params {
+                ValType::I32 => local_types.push(ValueType::I32),
+                ValType::F64 => local_types.push(ValueType::F64),
+                _ => unreachable!(),
+            }
+        }
+
+        for l in fdecl.get_pure_locals() {
+            let r = self.reg_allocator.new_spill();
+            self.mov_i32_to_reg(0, r);
+
+            match l {
+                (_, ValType::I32) => local_types.push(ValueType::I32),
+                (_, ValType::F64) => local_types.push(ValueType::F64),
+                _ => unreachable!(),
+            }
+        }
+
+        local_types
+    }
+
+    fn get_local_stack_offset(&self, fdecl: &FuncDecl, local_idx: u32) -> u32 {
+        let nparams = fdecl.get_sig().params().len() as u32;
+        if local_idx < nparams {
+            panic!("local index range within function params");
+        }
+
+        (local_idx - nparams) * 8
     }
 
     fn trap(&mut self) {

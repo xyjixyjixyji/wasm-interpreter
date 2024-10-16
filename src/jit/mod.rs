@@ -4,7 +4,7 @@ use anyhow::Result;
 use debug_cell::RefCell;
 use monoasm::CodePtr;
 
-use crate::module::wasm_module::WasmModule;
+use crate::module::{value_type::WasmValue, wasm_module::WasmModule};
 
 pub use compiler::X86JitCompiler;
 pub use mem::JitLinearMemory;
@@ -23,5 +23,6 @@ pub trait WasmJitCompiler {
         &mut self,
         module: Rc<RefCell<WasmModule>>,
         initial_mem_size_in_byte: u64,
+        main_params: Vec<WasmValue>,
     ) -> Result<CodePtr>;
 }
