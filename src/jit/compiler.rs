@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::regalloc::{
-    Register, X64Register, X86RegisterAllocator, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2,
+    Register, X64Register, X86RegisterAllocator, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2, REG_TEMP_FP2,
 };
 use super::{JitLinearMemory, WasmJitCompiler};
+use crate::jit::regalloc::REG_TEMP_FP;
 use crate::module::components::FuncDecl;
-use crate::module::insts::{I32Binop, Instruction};
+use crate::module::insts::{F64Binop, I32Binop, Instruction};
 use crate::module::value_type::WasmValue;
 use crate::module::wasm_module::WasmModule;
 use crate::vm::WASM_DEFAULT_PAGE_SIZE_BYTE;
@@ -146,7 +147,12 @@ impl X86JitCompiler {
                     let dst = self.reg_allocator.next();
                     self.compile_i32_load(dst, base, offset);
                 }
-                Instruction::F64Load { memarg } => todo!(),
+                Instruction::F64Load { memarg } => {
+                    let base = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let dst = self.reg_allocator.next();
+                    self.compile_f64_load(dst, base, offset);
+                }
                 Instruction::I32Load8S { memarg } => todo!(),
                 Instruction::I32Load8U { memarg } => todo!(),
                 Instruction::I32Load16S { memarg } => todo!(),
@@ -157,7 +163,12 @@ impl X86JitCompiler {
                     let base = self.reg_allocator.pop();
                     self.compile_i32_store(base, offset, value);
                 }
-                Instruction::F64Store { memarg } => todo!(),
+                Instruction::F64Store { memarg } => {
+                    let value = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let base = self.reg_allocator.pop();
+                    self.compile_f64_store(base, offset, value);
+                }
                 Instruction::I32Store8 { memarg } => todo!(),
                 Instruction::I32Store16 { memarg } => todo!(),
                 Instruction::MemorySize { mem } => todo!(),
@@ -171,7 +182,9 @@ impl X86JitCompiler {
                     self.compile_i32_binop(binop);
                 }
                 Instruction::F64Unop(_) => todo!(),
-                Instruction::F64Binop(_) => todo!(),
+                Instruction::F64Binop(binop) => {
+                    self.compile_f64_binop(binop);
+                }
             }
         }
 
@@ -201,8 +214,12 @@ impl X86JitCompiler {
         if local_idx < params.len() as u32 {
             // local is a param, from convention
             if local_idx < 6 {
-                let reg = X64Register::from_ith_argument(local_idx);
-                self.mov_reg_to_reg(dst, Register::Reg(reg));
+                let reg = if matches!(params[local_idx as usize], ValType::I32) {
+                    Register::from_ith_argument(local_idx, false)
+                } else {
+                    Register::from_ith_argument(local_idx, true)
+                };
+                self.mov_reg_to_reg(dst, reg);
             } else {
                 // TODO: more than 6 params, use rbp
             }
@@ -294,6 +311,37 @@ impl X86JitCompiler {
 }
 
 impl X86JitCompiler {
+    fn compile_f64_binop(&mut self, binop: &F64Binop) {
+        let b = self.reg_allocator.pop();
+        let a = self.reg_allocator.pop();
+
+        self.mov_reg_to_reg(Register::FpReg(REG_TEMP_FP), a);
+        self.mov_reg_to_reg(Register::FpReg(REG_TEMP_FP2), b);
+
+        match binop {
+            F64Binop::Add => {
+                monoasm!(
+                    &mut self.jit,
+                    addsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                );
+            }
+            F64Binop::Eq => todo!(),
+            F64Binop::Ne => todo!(),
+            F64Binop::Lt => todo!(),
+            F64Binop::Gt => todo!(),
+            F64Binop::Le => todo!(),
+            F64Binop::Ge => todo!(),
+            F64Binop::Sub => todo!(),
+            F64Binop::Mul => todo!(),
+            F64Binop::Div => todo!(),
+            F64Binop::Min => todo!(),
+            F64Binop::Max => todo!(),
+        }
+
+        self.mov_reg_to_reg(a, Register::FpReg(REG_TEMP_FP));
+        self.reg_allocator.push(a);
+    }
+
     // jit compile *a = a op b*
     fn compile_i32_binop(&mut self, binop: &I32Binop) {
         let b = self.reg_allocator.pop();
@@ -638,21 +686,34 @@ impl X86JitCompiler {
         // setup main params
         for (i, param) in main_params.iter().enumerate() {
             if i < 6 {
-                let reg = X64Register::from_ith_argument(i as u32);
                 match param {
-                    WasmValue::I32(v) => self.mov_i32_to_reg(*v, Register::Reg(reg)),
-                    WasmValue::F64(v) => self.mov_f64_to_reg(*v, Register::Reg(reg)),
+                    WasmValue::I32(v) => {
+                        let reg = Register::from_ith_argument(i as u32, false);
+                        self.mov_i32_to_reg(*v, reg);
+                    }
+                    WasmValue::F64(v) => {
+                        let reg = Register::from_ith_argument(i as u32, true);
+                        self.mov_f64_to_reg(*v, reg);
+                    }
                 }
             } else {
                 // push the constant to stack
                 match param {
-                    WasmValue::I32(v) => self.mov_i32_to_reg(*v, Register::Reg(REG_TEMP)),
-                    WasmValue::F64(v) => self.mov_f64_to_reg(*v, Register::Reg(REG_TEMP)),
+                    WasmValue::I32(v) => {
+                        self.mov_i32_to_reg(*v, Register::Reg(REG_TEMP));
+                        monoasm!(
+                            &mut self.jit,
+                            pushq R(REG_TEMP.as_index());
+                        );
+                    }
+                    WasmValue::F64(v) => {
+                        self.mov_f64_to_reg(*v, Register::FpReg(REG_TEMP_FP));
+                        monoasm!(
+                            &mut self.jit,
+                            pushq R(REG_TEMP_FP.as_index());
+                        );
+                    }
                 }
-                monoasm!(
-                    &mut self.jit,
-                    pushq R(REG_TEMP.as_index());
-                );
             }
         }
 

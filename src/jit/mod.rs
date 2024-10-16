@@ -10,8 +10,7 @@ pub use compiler::X86JitCompiler;
 pub use mem::JitLinearMemory;
 pub use trap::register_trap_handler;
 
-pub type I32ReturnFunc = extern "C" fn() -> i32;
-pub type F64ReturnFunc = extern "C" fn() -> f64;
+pub type ReturnFunc = extern "C" fn() -> u64;
 
 mod compiler;
 mod mem;

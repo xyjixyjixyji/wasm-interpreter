@@ -39,18 +39,6 @@ impl X64Register {
             X64Register::R15 => 15,
         }
     }
-
-    pub fn from_ith_argument(i: u32) -> X64Register {
-        match i {
-            0 => X64Register::Rdi,
-            1 => X64Register::Rsi,
-            2 => X64Register::Rdx,
-            3 => X64Register::Rcx,
-            4 => X64Register::R8,
-            5 => X64Register::R9,
-            _ => panic!("invalid argument index: {}", i),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +86,8 @@ impl X86FpRegister {
 
 pub const REG_TEMP: X64Register = X64Register::R13;
 pub const REG_TEMP2: X64Register = X64Register::R14;
+pub const REG_TEMP_FP: X86FpRegister = X86FpRegister::Xmm14;
+pub const REG_TEMP_FP2: X86FpRegister = X86FpRegister::Xmm15;
 pub const REG_MEMORY_BASE: X64Register = X64Register::R15;
 
 pub const ALLOC_POOL: [X64Register; 11] = [
@@ -114,7 +104,7 @@ pub const ALLOC_POOL: [X64Register; 11] = [
     X64Register::R12,
 ];
 
-pub const FP_ALLOC_POOL: [X86FpRegister; 16] = [
+pub const FP_ALLOC_POOL: [X86FpRegister; 14] = [
     X86FpRegister::Xmm0,
     X86FpRegister::Xmm1,
     X86FpRegister::Xmm2,
@@ -129,8 +119,6 @@ pub const FP_ALLOC_POOL: [X86FpRegister; 16] = [
     X86FpRegister::Xmm11,
     X86FpRegister::Xmm12,
     X86FpRegister::Xmm13,
-    X86FpRegister::Xmm14,
-    X86FpRegister::Xmm15,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,6 +128,31 @@ pub enum Register {
     Stack(usize), // offset from Rsp
 }
 
+impl Register {
+    pub fn from_ith_argument(i: u32, is_fp: bool) -> Register {
+        if is_fp {
+            match i {
+                0 => Register::FpReg(X86FpRegister::Xmm0),
+                1 => Register::FpReg(X86FpRegister::Xmm1),
+                2 => Register::FpReg(X86FpRegister::Xmm2),
+                3 => Register::FpReg(X86FpRegister::Xmm3),
+                4 => Register::FpReg(X86FpRegister::Xmm4),
+                5 => Register::FpReg(X86FpRegister::Xmm5),
+                _ => panic!("invalid argument index: {}", i),
+            }
+        } else {
+            match i {
+                0 => Register::Reg(X64Register::Rdi),
+                1 => Register::Reg(X64Register::Rsi),
+                2 => Register::Reg(X64Register::Rdx),
+                3 => Register::Reg(X64Register::Rcx),
+                4 => Register::Reg(X64Register::R8),
+                5 => Register::Reg(X64Register::R9),
+                _ => panic!("invalid argument index: {}", i),
+            }
+        }
+    }
+}
 impl std::fmt::Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
