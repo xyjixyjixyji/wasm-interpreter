@@ -29,11 +29,6 @@ impl X86RegisterAllocator {
         *self.reg_vec.last().expect("no register")
     }
 
-    /// Get the stack depth in slot, which is the number of 64-bit values on the stack.
-    pub fn stack_depth_in_slot(&self) -> usize {
-        self.stack_offset
-    }
-
     /// Allocate a position to hold the value.
     pub fn next(&mut self) -> Register {
         let reg = self.next_reg();
@@ -86,8 +81,8 @@ impl X86RegisterAllocator {
     }
 
     fn next_spill(&mut self) -> Register {
-        let reg = Register::Stack(self.stack_offset);
         self.stack_offset += 8;
+        let reg = Register::Stack(self.stack_offset);
         reg
     }
 }

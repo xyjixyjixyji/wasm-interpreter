@@ -50,10 +50,9 @@ impl JitLinearMemory {
     }
 
     pub fn grow(&mut self, jit: &mut JitMemory, npages: Register) {
-        log::debug!("memory base: {:x}", self.get_mem_size_addr());
         // get the old size
-        self.read_memory_size_in_page(jit, Register::Reg(REG_TEMP)); // reg_temp = old_size
         mov_reg_to_reg(jit, Register::Reg(REG_TEMP2), npages); // reg_temp2 = npages
+        self.read_memory_size_in_page(jit, Register::Reg(REG_TEMP)); // reg_temp = old_size
 
         // add the old size and npages
         monoasm!(

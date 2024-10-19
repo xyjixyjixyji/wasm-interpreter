@@ -28,6 +28,7 @@ pub trait WasmJitCompiler {
     ) -> Result<CodePtr>;
 }
 
+/// This uses REG_TEMP as a temporary register only.
 pub(crate) fn mov_reg_to_reg(jit: &mut JitMemory, dst: Register, src: Register) {
     if dst == src {
         return;
