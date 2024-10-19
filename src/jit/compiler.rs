@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::regalloc::{
-    Register, X64Register, X86RegisterAllocator, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2, REG_TEMP_FP2,
+    Register, X64Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_MEMORY_BASE, REG_TEMP,
+    REG_TEMP2, REG_TEMP_FP2,
 };
 use super::{JitLinearMemory, WasmJitCompiler};
 use crate::jit::mov_reg_to_reg;
@@ -11,7 +12,6 @@ use crate::module::components::FuncDecl;
 use crate::module::insts::{F64Binop, I32Binop, Instruction};
 use crate::module::value_type::WasmValue;
 use crate::module::wasm_module::WasmModule;
-use crate::vm::WASM_DEFAULT_PAGE_SIZE_BYTE;
 
 use anyhow::{anyhow, Result};
 use debug_cell::RefCell;
@@ -74,7 +74,7 @@ impl WasmJitCompiler for X86JitCompiler {
         // compile all functions
         for (i, fdecl) in module.borrow().get_funcs().iter().enumerate() {
             let func_begin_label = func_to_label.get(&i).unwrap();
-            self.compile_func(fdecl, *func_begin_label, &func_to_label)?;
+            self.compile_func(Rc::clone(&module), fdecl, *func_begin_label, &func_to_label)?;
         }
 
         self.jit.finalize();
@@ -90,6 +90,7 @@ impl WasmJitCompiler for X86JitCompiler {
 impl X86JitCompiler {
     fn compile_func(
         &mut self,
+        module: Rc<RefCell<WasmModule>>,
         fdecl: &FuncDecl,
         func_begin_label: DestLabel,
         func_to_label: &HashMap<usize, DestLabel>,
@@ -98,6 +99,8 @@ impl X86JitCompiler {
             &mut self.jit,
             func_begin_label:
         );
+
+        self.reg_allocator.reset();
 
         let stack_size = self.get_stack_size_in_byte(fdecl);
         self.prologue(stack_size);
@@ -124,8 +127,13 @@ impl X86JitCompiler {
                 Instruction::BrIf { rel_depth } => todo!(),
                 Instruction::BrTable { table } => todo!(),
                 Instruction::Return => todo!(),
-                // TODO: save all caller saved registers
-                Instruction::Call { func_idx } => todo!(),
+                Instruction::Call { func_idx } => {
+                    let label = func_to_label.get(&(*func_idx as usize)).unwrap();
+                    let callee_func = module.borrow().get_func(*func_idx).unwrap().clone();
+
+                    // compile the call instruction
+                    self.compile_call(&callee_func, *label);
+                }
                 Instruction::CallIndirect {
                     type_index,
                     table_index,
@@ -136,7 +144,7 @@ impl X86JitCompiler {
                 Instruction::Select => todo!(),
                 Instruction::LocalGet { local_idx } => {
                     let dst = self.reg_allocator.next();
-                    self.compile_local_get(dst, fdecl, *local_idx, &local_types);
+                    self.compile_local_get(dst, *local_idx, &local_types);
                 }
                 Instruction::LocalSet { local_idx } => todo!(),
                 Instruction::LocalTee { local_idx } => todo!(),
@@ -233,37 +241,86 @@ impl X86JitCompiler {
 }
 
 impl X86JitCompiler {
-    fn compile_local_get(
-        &mut self,
-        dst: Register,
-        fdecl: &FuncDecl,
-        local_idx: u32,
-        local_types: &[ValueType],
-    ) {
-        let params = fdecl.get_sig().params();
-        if local_idx < params.len() as u32 {
-            // local is a param, from convention
-            if local_idx < 6 {
-                let reg = if matches!(params[local_idx as usize], ValType::I32) {
-                    Register::from_ith_argument(local_idx, false)
-                } else {
-                    Register::from_ith_argument(local_idx, true)
-                };
-                mov_reg_to_reg(&mut self.jit, dst, reg);
-            } else {
-                // TODO: more than 6 params, use rbp
-            }
-        } else {
-            // on stack
-            let stack_offset = self.get_local_stack_offset(fdecl, local_idx);
-            let local_type = local_types[local_idx as usize];
-            match local_type {
-                ValueType::I32 => {
-                    let stack_reg = Register::Stack(stack_offset as usize);
-                    self.compile_load(dst, stack_reg, 0, 4);
+    fn compile_call(&mut self, callee_func: &FuncDecl, callee: DestLabel) {
+        // save caller-saved registers
+        let caller_saved_regs = self.reg_allocator.get_used_caller_saved_registers();
+
+        for reg in &caller_saved_regs {
+            match reg {
+                Register::Reg(r) => {
+                    monoasm!(
+                        &mut self.jit,
+                        pushq R(r.as_index());
+                    );
                 }
-                ValueType::F64 => todo!(),
+                Register::FpReg(r) => {
+                    monoasm!(
+                        &mut self.jit,
+                        movq R(REG_TEMP.as_index()), xmm(r.as_index());
+                        pushq R(REG_TEMP.as_index());
+                    );
+                }
+                Register::Stack(_) => panic!("stack should not be caller saved"),
             }
+        }
+
+        // setup arguments, top of the stack is the last argument
+        self.setup_function_call_arguments(callee_func);
+
+        // call the callee! and move the return value into the stack
+        monoasm!(
+            &mut self.jit,
+            call callee;
+        );
+
+        // note that we don't want the return value to be in caller-saved registers
+        // because we will pop them later in the call sequence
+        let ret = self.reg_allocator.next_not_caller_saved();
+        mov_reg_to_reg(&mut self.jit, ret, Register::Reg(X64Register::Rax));
+
+        // restore the stack spaced we used.....
+        let restore_size = (std::cmp::max(6, callee_func.get_sig().params().len()) - 6) * 8;
+        monoasm!(
+            &mut self.jit,
+            addq rsp, (restore_size);
+        );
+
+        // restore caller-saved registers
+        for reg in caller_saved_regs.iter().rev() {
+            match reg {
+                Register::Reg(r) => {
+                    monoasm!(
+                        &mut self.jit,
+                        popq R(r.as_index());
+                    );
+                }
+                Register::FpReg(r) => {
+                    monoasm!(
+                        &mut self.jit,
+                        popq R(REG_TEMP.as_index());
+                        movq xmm(r.as_index()), R(REG_TEMP.as_index());
+                    );
+                }
+                Register::Stack(_) => panic!("stack should not be caller saved"),
+            }
+        }
+    }
+}
+
+impl X86JitCompiler {
+    fn compile_local_get(&mut self, dst: Register, local_idx: u32, local_types: &[ValueType]) {
+        let local_type = local_types[local_idx as usize];
+        match local_type {
+            ValueType::I32 => {
+                monoasm!(
+                    &mut self.jit,
+                    movq R(REG_TEMP.as_index()), R(REG_LOCAL_BASE.as_index()); // reg_temp = reg_local_base
+                    addq R(REG_TEMP.as_index()), (local_idx * 8); // reg_temp = reg_local_base + local_idx * 8
+                    movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // reg_temp = *reg_temp
+                );
+                mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
+            }
+            ValueType::F64 => todo!(),
         }
     }
 
@@ -714,11 +771,60 @@ impl X86JitCompiler {
 
     fn setup_locals(&mut self, fdecl: &FuncDecl) -> Vec<ValueType> {
         let mut local_types = Vec::new();
-        for params in fdecl.get_sig().params() {
-            match params {
-                ValType::I32 => local_types.push(ValueType::I32),
-                ValType::F64 => local_types.push(ValueType::F64),
-                _ => unreachable!(),
+        for (i, params) in fdecl.get_sig().params().iter().enumerate() {
+            let r = self.reg_allocator.new_spill();
+
+            if i == 0 {
+                // store the first local to the base of the locals
+                match r {
+                    Register::Stack(o) => {
+                        monoasm!(
+                            &mut self.jit,
+                            movq R(REG_LOCAL_BASE.as_index()), rsp;
+                            addq R(REG_LOCAL_BASE.as_index()), (o);
+                        );
+                    }
+                    _ => unreachable!("locals are all spilled"),
+                }
+            }
+
+            if i < 6 {
+                match params {
+                    ValType::I32 => {
+                        mov_reg_to_reg(
+                            &mut self.jit,
+                            r,
+                            Register::from_ith_argument(i as u32, false),
+                        );
+                        local_types.push(ValueType::I32);
+                    }
+                    ValType::F64 => {
+                        mov_reg_to_reg(
+                            &mut self.jit,
+                            r,
+                            Register::from_ith_argument(i as u32, true),
+                        );
+                        local_types.push(ValueType::F64);
+                    }
+                    _ => unreachable!(),
+                }
+            } else {
+                // the locals are spilled to the stack
+                match params {
+                    ValType::I32 => {
+                        monoasm!(
+                            &mut self.jit,
+                            movq R(REG_TEMP.as_index()), [rbp + ((i as i32 - 6) * 8 + 8)];
+                        );
+                        mov_reg_to_reg(&mut self.jit, r, Register::Reg(REG_TEMP));
+                        local_types.push(ValueType::I32);
+                    }
+                    ValType::F64 => {
+                        todo!();
+                        local_types.push(ValueType::F64);
+                    }
+                    _ => unreachable!(),
+                }
             }
         }
 
@@ -734,15 +840,6 @@ impl X86JitCompiler {
         }
 
         local_types
-    }
-
-    fn get_local_stack_offset(&self, fdecl: &FuncDecl, local_idx: u32) -> u32 {
-        let nparams = fdecl.get_sig().params().len() as u32;
-        if local_idx < nparams {
-            panic!("local index range within function params");
-        }
-
-        (local_idx - nparams) * 8
     }
 
     fn trap(&mut self) {
@@ -797,23 +894,82 @@ impl X86JitCompiler {
         self.jit_linear_mem
             .read_memory_size_in_page(&mut self.jit, dst);
     }
-
-    fn store_mem_byte_size(&mut self, dst: Register) {
-        self.store_mem_page_size(Register::Reg(REG_TEMP));
-        monoasm!(
-            &mut self.jit,
-            movq R(REG_TEMP2.as_index()), (WASM_DEFAULT_PAGE_SIZE_BYTE);
-            imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // <-- reg_temp = mem_size_in_byte
-        );
-        mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
-    }
 }
 
 impl X86JitCompiler {
+    fn setup_function_call_arguments(&mut self, callee_func: &FuncDecl) {
+        let params = callee_func.get_sig().params();
+        let mut args = Vec::new();
+        let mut to_push = Vec::new();
+
+        // Collect all arguments from reg_allocator (stack top first)
+        for _ in 0..params.len() {
+            let arg = self.reg_allocator.pop();
+            args.insert(0, arg);
+        }
+
+        // Now process parameters and arguments from last to first
+        for (i, param) in params.iter().enumerate().rev() {
+            let arg = args.pop().unwrap(); // Gets arguments from first to last
+            if i < 6 {
+                // Handle register arguments
+                match param {
+                    ValType::I32 => {
+                        log::debug!(
+                            "moving {:?} to {:?}",
+                            arg,
+                            Register::from_ith_argument(i as u32, false)
+                        );
+                        mov_reg_to_reg(
+                            &mut self.jit,
+                            Register::from_ith_argument(i as u32, false),
+                            arg,
+                        );
+                    }
+                    ValType::F64 => {
+                        mov_reg_to_reg(
+                            &mut self.jit,
+                            Register::from_ith_argument(i as u32, true),
+                            arg,
+                        );
+                    }
+                    _ => unimplemented!("Invalid param type for JIT: {:?}", param),
+                }
+            } else {
+                to_push.push(arg);
+            }
+        }
+
+        for arg in to_push.iter().rev() {
+            match arg {
+                Register::Reg(r) => {
+                    monoasm!(
+                        &mut self.jit,
+                        pushq R(r.as_index());
+                    );
+                }
+                Register::FpReg(r) => {
+                    monoasm!(
+                        &mut self.jit,
+                        movq R(REG_TEMP.as_index()), xmm(r.as_index());
+                        pushq R(REG_TEMP.as_index());
+                    );
+                }
+                Register::Stack(o) => {
+                    monoasm!(
+                        &mut self.jit,
+                        movq R(REG_TEMP.as_index()), [rsp + (*o)];
+                        pushq R(REG_TEMP.as_index());
+                    );
+                }
+            }
+        }
+    }
+
     // Get the stack size usage of the function, used for stack allocation
     // We get only an upper bound approximate, since we don't want too much overhead
     fn get_stack_size_in_byte(&self, fdecl: &FuncDecl) -> u64 {
-        let nlocals = fdecl.get_pure_locals().len() as u64;
+        let nlocals = (fdecl.get_pure_locals().len() + fdecl.get_sig().params().len()) as u64;
 
         let mut max_stack_depth: u64 = 0;
         let mut current_stack_depth: u64 = 0;

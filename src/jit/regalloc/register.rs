@@ -84,13 +84,14 @@ impl X86FpRegister {
     }
 }
 
+pub const REG_LOCAL_BASE: X64Register = X64Register::R12;
 pub const REG_TEMP: X64Register = X64Register::R13;
 pub const REG_TEMP2: X64Register = X64Register::R14;
+pub const REG_MEMORY_BASE: X64Register = X64Register::R15;
 pub const REG_TEMP_FP: X86FpRegister = X86FpRegister::Xmm14;
 pub const REG_TEMP_FP2: X86FpRegister = X86FpRegister::Xmm15;
-pub const REG_MEMORY_BASE: X64Register = X64Register::R15;
 
-pub const ALLOC_POOL: [X64Register; 11] = [
+pub const ALLOC_POOL: [X64Register; 10] = [
     X64Register::Rax,
     X64Register::Rdi,
     X64Register::Rsi,
@@ -101,7 +102,6 @@ pub const ALLOC_POOL: [X64Register; 11] = [
     X64Register::R10,
     X64Register::Rbx,
     X64Register::R11,
-    X64Register::R12,
 ];
 
 pub const FP_ALLOC_POOL: [X86FpRegister; 14] = [
@@ -129,6 +129,25 @@ pub enum Register {
 }
 
 impl Register {
+    pub fn is_caller_saved(&self) -> bool {
+        match self {
+            Register::Reg(r) => matches!(
+                r,
+                X64Register::Rax
+                    | X64Register::Rcx
+                    | X64Register::Rdx
+                    | X64Register::Rsi
+                    | X64Register::Rdi
+                    | X64Register::R8
+                    | X64Register::R9
+                    | X64Register::R10
+                    | X64Register::R11
+            ),
+            Register::FpReg(_) => true,
+            Register::Stack(_) => false,
+        }
+    }
+
     pub fn from_ith_argument(i: u32, is_fp: bool) -> Register {
         if is_fp {
             match i {

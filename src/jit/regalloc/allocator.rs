@@ -6,6 +6,7 @@
 
 use super::register::{Register, ALLOC_POOL, FP_ALLOC_POOL};
 
+#[derive(Debug)]
 pub struct X86RegisterAllocator {
     // Register vector, which is the currently used registers, representing
     // values staying on the wasm operand stack.
@@ -24,6 +25,11 @@ impl X86RegisterAllocator {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.reg_vec.clear();
+        self.stack_offset = 0;
+    }
+
     /// Get the stack top, which is the last element of the register vector.
     pub fn top(&self) -> Register {
         *self.reg_vec.last().expect("no register")
@@ -33,6 +39,25 @@ impl X86RegisterAllocator {
     pub fn next(&mut self) -> Register {
         let reg = self.next_reg();
         self.reg_vec.push(reg);
+        reg
+    }
+
+    pub fn next_not_caller_saved(&mut self) -> Register {
+        let mut pool: Vec<_> = ALLOC_POOL
+            .to_vec()
+            .into_iter()
+            .filter(|r| !Register::Reg(*r).is_caller_saved())
+            .filter(|r| !self.reg_vec.contains(&Register::Reg(*r)))
+            .collect();
+
+        let reg = if pool.is_empty() {
+            self.next_spill()
+        } else {
+            Register::Reg(pool.pop().unwrap())
+        };
+
+        self.reg_vec.push(reg);
+
         reg
     }
 
@@ -47,6 +72,14 @@ impl X86RegisterAllocator {
         let reg = self.next_spill();
         self.reg_vec.push(reg);
         reg
+    }
+
+    pub fn get_used_caller_saved_registers(&self) -> Vec<Register> {
+        self.reg_vec
+            .iter()
+            .filter(|r| r.is_caller_saved())
+            .cloned()
+            .collect()
     }
 
     pub fn push(&mut self, reg: Register) {
