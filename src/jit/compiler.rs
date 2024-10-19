@@ -146,13 +146,13 @@ impl X86JitCompiler {
                     let base = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next();
-                    self.compile_load8B(dst, base, offset);
+                    self.compile_load(dst, base, offset, 4);
                 }
                 Instruction::F64Load { memarg } => {
                     let base = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next();
-                    self.compile_load8B(dst, base, offset);
+                    self.compile_load(dst, base, offset, 8);
                 }
                 Instruction::I32Load8S { memarg } => todo!(),
                 Instruction::I32Load8U { memarg } => todo!(),
@@ -162,16 +162,26 @@ impl X86JitCompiler {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store8B(base, offset, value);
+                    self.compile_store(base, offset, value, 4);
                 }
                 Instruction::F64Store { memarg } => {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store8B(base, offset, value);
+                    self.compile_store(base, offset, value, 8);
                 }
-                Instruction::I32Store8 { memarg } => todo!(),
-                Instruction::I32Store16 { memarg } => todo!(),
+                Instruction::I32Store8 { memarg } => {
+                    let value = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let base = self.reg_allocator.pop();
+                    self.compile_store(base, offset, value, 1);
+                }
+                Instruction::I32Store16 { memarg } => {
+                    let value = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let base = self.reg_allocator.pop();
+                    self.compile_store(base, offset, value, 2);
+                }
                 Instruction::MemorySize { mem } => {
                     if *mem != 0 {
                         return Err(anyhow!("memory.size: invalid memory index"));
@@ -250,7 +260,7 @@ impl X86JitCompiler {
             match local_type {
                 ValueType::I32 => {
                     let stack_reg = Register::Stack(stack_offset as usize);
-                    self.compile_load8B(dst, stack_reg, 0);
+                    self.compile_load(dst, stack_reg, 0, 4);
                 }
                 ValueType::F64 => todo!(),
             }
@@ -261,20 +271,43 @@ impl X86JitCompiler {
         self.jit_linear_mem.grow(&mut self.jit, npages);
     }
 
-    fn compile_load8B(&mut self, dst: Register, base: Register, offset: u32) {
+    fn compile_load(&mut self, dst: Register, base: Register, offset: u32, width: u32) {
         self.get_effective_address(base, offset); // REG_TEMP stores the effective address
 
         // 2. load the result into dst
         monoasm!(
             &mut self.jit,
-            addq R(REG_TEMP.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp2 = reg_memory_base + effective_addr
-            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // <-- reg_temp = *reg_temp2
+            addq R(REG_TEMP.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp = reg_memory_base + effective_addr
+            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // <-- reg_temp = *reg_temp
         );
+
+        match width {
+            8 => {}
+            4 => {
+                monoasm!(
+                    &mut self.jit,
+                    movl R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                );
+            }
+            2 => {
+                monoasm!(
+                    &mut self.jit,
+                    movw R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                );
+            }
+            1 => {
+                monoasm!(
+                    &mut self.jit,
+                    movb R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                );
+            }
+            _ => unreachable!("invalid width: {}", width),
+        }
 
         mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
     }
 
-    fn compile_store8B(&mut self, base: Register, offset: u32, value: Register) {
+    fn compile_store(&mut self, base: Register, offset: u32, value: Register, width: u32) {
         self.get_effective_address(base, offset); // reg_temp = effective_addr
 
         // 2. store the value to dst
@@ -285,10 +318,33 @@ impl X86JitCompiler {
 
         mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), value); // <-- reg_temp = value
 
-        monoasm!(
-            &mut self.jit,
-            movq [R(REG_TEMP.as_index())], R(REG_TEMP2.as_index());
-        );
+        match width {
+            8 => {
+                monoasm!(
+                    &mut self.jit,
+                    movq [R(REG_TEMP.as_index())], R(REG_TEMP2.as_index());
+                );
+            }
+            4 => {
+                monoasm!(
+                    &mut self.jit,
+                    movl [R(REG_TEMP.as_index())], R(REG_TEMP2.as_index());
+                );
+            }
+            2 => {
+                monoasm!(
+                    &mut self.jit,
+                    movw [R(REG_TEMP.as_index())], R(REG_TEMP2.as_index());
+                );
+            }
+            1 => {
+                monoasm!(
+                    &mut self.jit,
+                    movb [R(REG_TEMP.as_index())], R(REG_TEMP2.as_index());
+                );
+            }
+            _ => unreachable!("invalid width: {}", width),
+        }
     }
 }
 
