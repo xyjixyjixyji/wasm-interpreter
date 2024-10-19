@@ -5,6 +5,7 @@ use super::regalloc::{
     Register, X64Register, X86RegisterAllocator, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2, REG_TEMP_FP2,
 };
 use super::{JitLinearMemory, WasmJitCompiler};
+use crate::jit::mov_reg_to_reg;
 use crate::jit::regalloc::REG_TEMP_FP;
 use crate::module::components::FuncDecl;
 use crate::module::insts::{F64Binop, I32Binop, Instruction};
@@ -12,7 +13,7 @@ use crate::module::value_type::WasmValue;
 use crate::module::wasm_module::WasmModule;
 use crate::vm::WASM_DEFAULT_PAGE_SIZE_BYTE;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use debug_cell::RefCell;
 use monoasm::{CodePtr, DestLabel, Disp, Imm, JitMemory, Reg, Rm, Scale};
 use monoasm_macro::monoasm;
@@ -171,8 +172,23 @@ impl X86JitCompiler {
                 }
                 Instruction::I32Store8 { memarg } => todo!(),
                 Instruction::I32Store16 { memarg } => todo!(),
-                Instruction::MemorySize { mem } => todo!(),
-                Instruction::MemoryGrow { mem } => todo!(),
+                Instruction::MemorySize { mem } => {
+                    if *mem != 0 {
+                        return Err(anyhow!("memory.size: invalid memory index"));
+                    }
+
+                    let dst = self.reg_allocator.next();
+                    self.store_mem_page_size(dst);
+                }
+                Instruction::MemoryGrow { mem } => {
+                    if *mem != 0 {
+                        return Err(anyhow!("memory.size: invalid memory index"));
+                    }
+
+                    let additional_pages = self.reg_allocator.pop();
+                    let old_mem_size = self.reg_allocator.next();
+                    self.compile_memory_grow(old_mem_size, additional_pages);
+                }
                 Instruction::F64Const { value } => {
                     let reg = self.reg_allocator.next_xmm();
                     self.mov_f64_to_reg(*value, reg);
@@ -190,7 +206,7 @@ impl X86JitCompiler {
 
         // return...
         let stack_top = self.reg_allocator.top();
-        self.mov_reg_to_reg(Register::Reg(X64Register::Rax), stack_top);
+        mov_reg_to_reg(&mut self.jit, Register::Reg(X64Register::Rax), stack_top);
 
         self.epilogue(stack_size);
         monoasm!(
@@ -219,7 +235,7 @@ impl X86JitCompiler {
                 } else {
                     Register::from_ith_argument(local_idx, true)
                 };
-                self.mov_reg_to_reg(dst, reg);
+                mov_reg_to_reg(&mut self.jit, dst, reg);
             } else {
                 // TODO: more than 6 params, use rbp
             }
@@ -237,6 +253,13 @@ impl X86JitCompiler {
         }
     }
 
+    fn compile_memory_grow(&mut self, dst: Register, npages: Register) {
+        log::debug!("growing memory");
+        self.jit_linear_mem
+            .read_memory_size_in_page(&mut self.jit, dst);
+        self.jit_linear_mem.grow(&mut self.jit, npages);
+    }
+
     fn compile_f64_load(&mut self, dst: Register, base: Register, offset: u32) {
         // 1. if out of bounds, trap
         let width = 8;
@@ -250,7 +273,7 @@ impl X86JitCompiler {
             movq R(REG_TEMP.as_index()), [R(REG_TEMP2.as_index())]; // <-- reg_temp = *reg_temp2
         );
 
-        self.mov_reg_to_reg(dst, Register::Reg(REG_TEMP));
+        mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
     }
 
     fn compile_f64_store(&mut self, base: Register, offset: u32, value: Register) {
@@ -265,7 +288,7 @@ impl X86JitCompiler {
             addq R(REG_TEMP2.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp2 = reg_memory_base + effective_addr
         );
 
-        self.mov_reg_to_reg(Register::Reg(REG_TEMP), value); // <-- reg_temp = value
+        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), value); // <-- reg_temp = value
 
         monoasm!(
             &mut self.jit,
@@ -286,7 +309,7 @@ impl X86JitCompiler {
             movq R(REG_TEMP.as_index()), [R(REG_TEMP2.as_index())]; // <-- reg_temp = *reg_temp2
         );
 
-        self.mov_reg_to_reg(dst, Register::Reg(REG_TEMP));
+        mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
     }
 
     fn compile_i32_store(&mut self, base: Register, offset: u32, value: Register) {
@@ -301,7 +324,7 @@ impl X86JitCompiler {
             addq R(REG_TEMP2.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp2 = reg_memory_base + effective_addr
         );
 
-        self.mov_reg_to_reg(Register::Reg(REG_TEMP), value); // <-- reg_temp = value
+        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), value); // <-- reg_temp = value
 
         monoasm!(
             &mut self.jit,
@@ -315,8 +338,8 @@ impl X86JitCompiler {
         let b = self.reg_allocator.pop();
         let a = self.reg_allocator.pop();
 
-        self.mov_reg_to_reg(Register::FpReg(REG_TEMP_FP), a);
-        self.mov_reg_to_reg(Register::FpReg(REG_TEMP_FP2), b);
+        mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), a);
+        mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP2), b);
 
         match binop {
             F64Binop::Add => {
@@ -338,7 +361,7 @@ impl X86JitCompiler {
             F64Binop::Max => todo!(),
         }
 
-        self.mov_reg_to_reg(a, Register::FpReg(REG_TEMP_FP));
+        mov_reg_to_reg(&mut self.jit, a, Register::FpReg(REG_TEMP_FP));
         self.reg_allocator.push(a);
     }
 
@@ -347,8 +370,8 @@ impl X86JitCompiler {
         let b = self.reg_allocator.pop();
         let a = self.reg_allocator.pop();
 
-        self.mov_reg_to_reg(Register::Reg(REG_TEMP), a);
-        self.mov_reg_to_reg(Register::Reg(REG_TEMP2), b);
+        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), a);
+        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), b);
 
         match binop {
             I32Binop::Eq => {
@@ -475,9 +498,17 @@ impl X86JitCompiler {
                     idiv R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
                 );
                 if matches!(binop, I32Binop::DivS) {
-                    self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rax));
+                    mov_reg_to_reg(
+                        &mut self.jit,
+                        Register::Reg(REG_TEMP),
+                        Register::Reg(X64Register::Rax),
+                    );
                 } else {
-                    self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rdx));
+                    mov_reg_to_reg(
+                        &mut self.jit,
+                        Register::Reg(REG_TEMP),
+                        Register::Reg(X64Register::Rdx),
+                    );
                 }
                 monoasm!(
                     &mut self.jit,
@@ -508,9 +539,17 @@ impl X86JitCompiler {
                     div R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
                 );
                 if matches!(binop, I32Binop::DivU) {
-                    self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rax));
+                    mov_reg_to_reg(
+                        &mut self.jit,
+                        Register::Reg(REG_TEMP),
+                        Register::Reg(X64Register::Rax),
+                    );
                 } else {
-                    self.mov_reg_to_reg(Register::Reg(REG_TEMP), Register::Reg(X64Register::Rdx));
+                    mov_reg_to_reg(
+                        &mut self.jit,
+                        Register::Reg(REG_TEMP),
+                        Register::Reg(X64Register::Rdx),
+                    );
                 }
                 monoasm!(
                     &mut self.jit,
@@ -543,7 +582,7 @@ impl X86JitCompiler {
             I32Binop::Rotr => todo!(),
         }
 
-        self.mov_reg_to_reg(a, Register::Reg(REG_TEMP));
+        mov_reg_to_reg(&mut self.jit, a, Register::Reg(REG_TEMP));
         self.reg_allocator.push(a);
     }
 }
@@ -587,70 +626,6 @@ impl X86JitCompiler {
         }
     }
 
-    fn mov_reg_to_reg(&mut self, dst: Register, src: Register) {
-        if dst == src {
-            return;
-        }
-
-        match (dst, src) {
-            (Register::Stack(o_dst), Register::Stack(o_src)) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq R(REG_TEMP.as_index()), [rsp + (o_src)];
-                    movq [rsp + (o_dst)], R(REG_TEMP.as_index());
-                );
-            }
-            (Register::Reg(r_dst), Register::Stack(o_src)) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq R(r_dst.as_index()), [rsp + (o_src)];
-                );
-            }
-            (Register::FpReg(fpr_dst), Register::Stack(o_src)) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq xmm(fpr_dst.as_index()), [rsp + (o_src)];
-                );
-            }
-            (Register::Reg(r_dst), Register::Reg(r_src)) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq R(r_dst.as_index()), R(r_src.as_index());
-                );
-            }
-            (Register::Reg(r_dst), Register::FpReg(fpr_src)) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq R(r_dst.as_index()), xmm(fpr_src.as_index());
-                );
-            }
-            (Register::FpReg(fpr_dst), Register::Reg(r_src)) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq xmm(fpr_dst.as_index()), R(r_src.as_index());
-                );
-            }
-            (Register::FpReg(fpr_dst), Register::FpReg(fpr_src)) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq xmm(fpr_dst.as_index()), xmm(fpr_src.as_index());
-                );
-            }
-            (Register::Stack(o_dst), Register::Reg(r_src)) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq [rsp + (o_dst)], R(r_src.as_index());
-                );
-            }
-            (Register::Stack(o_dst), Register::FpReg(fpr_src)) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq [rsp + (o_dst)], xmm(fpr_src.as_index());
-                );
-            }
-        }
-    }
-
     fn setup_trap_entry(&mut self) -> DestLabel {
         let trap_label = self.trap_label;
         monoasm!(
@@ -677,11 +652,7 @@ impl X86JitCompiler {
 
         // setup linear memory info
         self.jit_linear_mem
-            .save_base(&mut self.jit, initial_mem_size_in_byte);
-
-        let npages = initial_mem_size_in_byte / WASM_DEFAULT_PAGE_SIZE_BYTE as u64;
-        self.jit_linear_mem
-            .save_size_in_pages(&mut self.jit, npages);
+            .init_size(&mut self.jit, initial_mem_size_in_byte);
 
         // setup main params
         for (i, param) in main_params.iter().enumerate() {
@@ -805,15 +776,8 @@ impl X86JitCompiler {
     /// - REG_TEMP2 will store the effective address + width
     fn check_memory_bounds(&mut self, base: Register, offset: u32, width: u32) {
         let trap_label = self.trap_label;
-        let mem_size_addr = self.jit_linear_mem.get_mem_size_addr();
-        monoasm!(
-            &mut self.jit,
-            movq R(REG_TEMP.as_index()), (mem_size_addr);
-            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // <-- reg_temp = mem_size_in_page
-            movq R(REG_TEMP2.as_index()), (WASM_DEFAULT_PAGE_SIZE_BYTE);
-            imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // <-- reg_temp = mem_size_in_byte
-        );
-        self.mov_reg_to_reg(Register::Reg(REG_TEMP2), base); // <-- reg_temp2 = base
+        self.store_mem_byte_size(Register::Reg(REG_TEMP));
+        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), base); // <-- reg_temp2 = base
         monoasm!(
             &mut self.jit,
             addq R(REG_TEMP2.as_index()), (offset);
@@ -821,6 +785,21 @@ impl X86JitCompiler {
             cmpq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
             jb trap_label; // jump if mem_size < effective_addr + width
         );
+    }
+
+    fn store_mem_page_size(&mut self, dst: Register) {
+        self.jit_linear_mem
+            .read_memory_size_in_page(&mut self.jit, dst);
+    }
+
+    fn store_mem_byte_size(&mut self, dst: Register) {
+        self.store_mem_page_size(Register::Reg(REG_TEMP));
+        monoasm!(
+            &mut self.jit,
+            movq R(REG_TEMP2.as_index()), (WASM_DEFAULT_PAGE_SIZE_BYTE);
+            imul R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // <-- reg_temp = mem_size_in_byte
+        );
+        mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
     }
 }
 
