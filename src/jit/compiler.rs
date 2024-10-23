@@ -107,6 +107,7 @@ impl X86JitCompiler {
                 }
                 Instruction::Unreachable => {
                     self.trap();
+                    return Ok(());
                 }
                 Instruction::Nop => {}
                 Instruction::Block { ty } => todo!(),
