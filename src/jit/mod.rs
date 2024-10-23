@@ -15,9 +15,16 @@ pub use trap::register_trap_handler;
 pub type ReturnFunc = extern "C" fn() -> u64;
 
 mod compiler;
+mod insts;
 mod mem;
 mod regalloc;
 mod trap;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ValueType {
+    I32,
+    F64,
+}
 
 pub trait WasmJitCompiler {
     fn compile(

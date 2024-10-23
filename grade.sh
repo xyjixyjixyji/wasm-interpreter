@@ -10,9 +10,9 @@ function run_wasm {
     shift
     local run_args=$@
     if [ -z "$run_args" ]; then
-      local output=$(timeout 5 ./wasm-vm "$wasm_file" 2>&1)
+      local output=$(timeout 5 ./wasm-vm --jit "$wasm_file" 2>&1)
     else
-      local output=$(timeout 5 ./wasm-vm -a $run_args "$wasm_file" 2>&1)
+      local output=$(timeout 5 ./wasm-vm --jit -a $run_args "$wasm_file" 2>&1)
     fi
     if [ $? -ne 0 ]; then
       echo "timeout"

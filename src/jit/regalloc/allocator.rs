@@ -30,6 +30,10 @@ impl X86RegisterAllocator {
         self.stack_offset = 0;
     }
 
+    pub fn clear_vec(&mut self) {
+        self.reg_vec.clear();
+    }
+
     /// Get the stack top, which is the last element of the register vector.
     pub fn top(&self) -> Register {
         *self.reg_vec.last().expect("no register")
