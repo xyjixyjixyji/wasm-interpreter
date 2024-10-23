@@ -107,7 +107,6 @@ impl X86JitCompiler {
                 }
                 Instruction::Unreachable => {
                     self.trap();
-                    return Ok(());
                 }
                 Instruction::Nop => {}
                 Instruction::Block { ty } => todo!(),
@@ -118,7 +117,12 @@ impl X86JitCompiler {
                 Instruction::Br { rel_depth } => todo!(),
                 Instruction::BrIf { rel_depth } => todo!(),
                 Instruction::BrTable { table } => todo!(),
-                Instruction::Return => todo!(),
+                Instruction::Return => {
+                    monoasm!(
+                        &mut self.jit,
+                        ret;
+                    );
+                }
                 Instruction::Call { func_idx } => {
                     let label = func_to_label.get(&(*func_idx as usize)).unwrap();
                     let callee_func = module.borrow().get_func(*func_idx).unwrap().clone();
@@ -229,11 +233,13 @@ impl X86JitCompiler {
 
         // return...
         let stack_top = self.reg_allocator.top();
-        mov_reg_to_reg(
-            &mut self.jit,
-            Register::Reg(X64Register::Rax),
-            stack_top.reg,
-        );
+        if let Some(stack_top) = stack_top {
+            mov_reg_to_reg(
+                &mut self.jit,
+                Register::Reg(X64Register::Rax),
+                stack_top.reg,
+            );
+        }
 
         self.epilogue(stack_size);
         monoasm!(

@@ -49,8 +49,8 @@ impl X86RegisterAllocator {
     }
 
     /// Get the stack top, which is the last element of the register vector.
-    pub fn top(&self) -> RegWithType {
-        *self.reg_vec.last().expect("no register")
+    pub fn top(&self) -> Option<RegWithType> {
+        self.reg_vec.last().copied()
     }
 
     /// Allocate a position to hold the value.
