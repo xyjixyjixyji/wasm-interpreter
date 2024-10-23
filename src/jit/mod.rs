@@ -20,7 +20,7 @@ mod mem;
 mod regalloc;
 mod trap;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ValueType {
     I32,
     F64,

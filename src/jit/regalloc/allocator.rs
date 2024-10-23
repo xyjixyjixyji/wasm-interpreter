@@ -4,13 +4,27 @@
 // During the instruction iteration, it updates the register vector accordingly
 // based on the Wasm operand stack.
 
+use crate::jit::ValueType;
+
 use super::register::{Register, ALLOC_POOL, FP_ALLOC_POOL};
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct RegType {
+    pub(crate) reg: Register,
+    pub(crate) ty: ValueType,
+}
+
+impl RegType {
+    pub fn new(reg: Register, ty: ValueType) -> Self {
+        Self { reg, ty }
+    }
+}
 
 #[derive(Debug)]
 pub struct X86RegisterAllocator {
     // Register vector, which is the currently used registers, representing
     // values staying on the wasm operand stack.
-    reg_vec: Vec<Register>,
+    reg_vec: Vec<RegType>,
     // Stack offset for the current function frame, used for spilled variables.
     // Note that we always spills 64-bit value.
     stack_offset: usize,
@@ -35,23 +49,23 @@ impl X86RegisterAllocator {
     }
 
     /// Get the stack top, which is the last element of the register vector.
-    pub fn top(&self) -> Register {
+    pub fn top(&self) -> RegType {
         *self.reg_vec.last().expect("no register")
     }
 
     /// Allocate a position to hold the value.
-    pub fn next(&mut self) -> Register {
+    pub fn next(&mut self) -> RegType {
         let reg = self.next_reg();
-        self.reg_vec.push(reg);
-        reg
+        self.reg_vec.push(RegType::new(reg, ValueType::I32));
+        RegType::new(reg, ValueType::I32)
     }
 
-    pub fn next_not_caller_saved(&mut self) -> Register {
+    pub fn next_not_caller_saved(&mut self) -> RegType {
         let mut pool: Vec<_> = ALLOC_POOL
             .to_vec()
             .into_iter()
             .filter(|r| !Register::Reg(*r).is_caller_saved())
-            .filter(|r| !self.reg_vec.contains(&Register::Reg(*r)))
+            .filter(|r| !self.reg_vec.iter().any(|rt| rt.reg == Register::Reg(*r)))
             .collect();
 
         let reg = if pool.is_empty() {
@@ -60,37 +74,37 @@ impl X86RegisterAllocator {
             Register::Reg(pool.pop().unwrap())
         };
 
-        self.reg_vec.push(reg);
+        self.reg_vec.push(RegType::new(reg, ValueType::I32));
 
-        reg
+        RegType::new(reg, ValueType::I32)
     }
 
-    pub fn next_xmm(&mut self) -> Register {
+    pub fn next_xmm(&mut self) -> RegType {
         let reg = self.next_xmm_reg();
-        self.reg_vec.push(reg);
-        reg
+        self.reg_vec.push(RegType::new(reg, ValueType::F64));
+        RegType::new(reg, ValueType::F64)
     }
 
     /// Allocate a position to spill the value. Used for wasm local.
-    pub fn new_spill(&mut self) -> Register {
+    pub fn new_spill(&mut self, ty: ValueType) -> RegType {
         let reg = self.next_spill();
-        self.reg_vec.push(reg);
-        reg
+        self.reg_vec.push(RegType::new(reg, ty));
+        RegType::new(reg, ty)
     }
 
     pub fn get_used_caller_saved_registers(&self) -> Vec<Register> {
         self.reg_vec
             .iter()
+            .map(|rt| rt.reg)
             .filter(|r| r.is_caller_saved())
-            .cloned()
             .collect()
     }
 
-    pub fn push(&mut self, reg: Register) {
-        self.reg_vec.push(reg);
+    pub fn push(&mut self, rt: RegType) {
+        self.reg_vec.push(rt);
     }
 
-    pub fn pop(&mut self) -> Register {
+    pub fn pop(&mut self) -> RegType {
         self.reg_vec.pop().expect("no register to drop")
     }
 }
@@ -101,7 +115,7 @@ impl X86RegisterAllocator {
     // If all registers are used, return a stack register.
     fn next_reg(&mut self) -> Register {
         for reg in ALLOC_POOL {
-            if !self.reg_vec.contains(&Register::Reg(reg)) {
+            if !self.reg_vec.iter().any(|rt| rt.reg == Register::Reg(reg)) {
                 return Register::Reg(reg);
             }
         }
@@ -110,7 +124,7 @@ impl X86RegisterAllocator {
 
     fn next_xmm_reg(&mut self) -> Register {
         for reg in FP_ALLOC_POOL {
-            if !self.reg_vec.contains(&Register::FpReg(reg)) {
+            if !self.reg_vec.iter().any(|rt| rt.reg == Register::FpReg(reg)) {
                 return Register::FpReg(reg);
             }
         }

@@ -1,8 +1,10 @@
 use crate::{
     jit::{
         mov_reg_to_reg,
-        regalloc::{Register, X64Register, REG_TEMP, REG_TEMP2, REG_TEMP_FP, REG_TEMP_FP2},
-        X86JitCompiler,
+        regalloc::{
+            RegType, Register, X64Register, REG_TEMP, REG_TEMP2, REG_TEMP_FP, REG_TEMP_FP2,
+        },
+        ValueType, X86JitCompiler,
     },
     module::insts::{F64Binop, I32Binop},
 };
@@ -13,8 +15,8 @@ use monoasm_macro::monoasm;
 impl X86JitCompiler {
     // jit compile *a = a op b*
     pub(crate) fn compile_f64_binop(&mut self, binop: &F64Binop) {
-        let b = self.reg_allocator.pop();
-        let a = self.reg_allocator.pop();
+        let b = self.reg_allocator.pop().reg;
+        let a = self.reg_allocator.pop().reg;
 
         mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), a);
         mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP2), b);
@@ -40,15 +42,15 @@ impl X86JitCompiler {
         }
 
         mov_reg_to_reg(&mut self.jit, a, Register::FpReg(REG_TEMP_FP));
-        self.reg_allocator.push(a);
+        self.reg_allocator.push(RegType::new(a, ValueType::F64));
     }
 
     pub(crate) fn compile_i32_binop(&mut self, binop: &I32Binop) {
         let b = self.reg_allocator.pop();
         let a = self.reg_allocator.pop();
 
-        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), a);
-        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), b);
+        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), a.reg);
+        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), b.reg);
 
         match binop {
             I32Binop::Eq => {
@@ -259,7 +261,7 @@ impl X86JitCompiler {
             I32Binop::Rotr => todo!(),
         }
 
-        mov_reg_to_reg(&mut self.jit, a, Register::Reg(REG_TEMP));
+        mov_reg_to_reg(&mut self.jit, a.reg, Register::Reg(REG_TEMP));
         self.reg_allocator.push(a);
     }
 }

@@ -103,7 +103,7 @@ impl X86JitCompiler {
             match inst {
                 Instruction::I32Const { value } => {
                     let reg = self.reg_allocator.next();
-                    self.mov_i32_to_reg(*value, reg);
+                    self.mov_i32_to_reg(*value, reg.reg);
                 }
                 Instruction::Unreachable => {
                     self.trap();
@@ -132,9 +132,14 @@ impl X86JitCompiler {
                 Instruction::Drop => {
                     self.reg_allocator.pop();
                 }
-                Instruction::Select => todo!(),
+                Instruction::Select => {
+                    let cond = self.reg_allocator.pop();
+                    let b = self.reg_allocator.pop();
+                    let a = self.reg_allocator.pop();
+                    todo!()
+                }
                 Instruction::LocalGet { local_idx } => {
-                    let dst = self.reg_allocator.next();
+                    let dst = self.reg_allocator.next().reg;
                     self.compile_local_get(dst, *local_idx, &local_types);
                 }
                 Instruction::LocalSet { local_idx } => todo!(),
@@ -144,14 +149,14 @@ impl X86JitCompiler {
                 Instruction::I32Load { memarg } => {
                     let base = self.reg_allocator.pop();
                     let offset = memarg.offset;
-                    let dst = self.reg_allocator.next();
-                    self.compile_load(dst, base, offset, 4);
+                    let dst = self.reg_allocator.next().reg;
+                    self.compile_load(dst, base.reg, offset, 4);
                 }
                 Instruction::F64Load { memarg } => {
                     let base = self.reg_allocator.pop();
                     let offset = memarg.offset;
-                    let dst = self.reg_allocator.next();
-                    self.compile_load(dst, base, offset, 8);
+                    let dst = self.reg_allocator.next().reg;
+                    self.compile_load(dst, base.reg, offset, 8);
                 }
                 Instruction::I32Load8S { memarg } => todo!(),
                 Instruction::I32Load8U { memarg } => todo!(),
@@ -161,25 +166,25 @@ impl X86JitCompiler {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store(base, offset, value, 4);
+                    self.compile_store(base.reg, offset, value.reg, 4);
                 }
                 Instruction::F64Store { memarg } => {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store(base, offset, value, 8);
+                    self.compile_store(base.reg, offset, value.reg, 8);
                 }
                 Instruction::I32Store8 { memarg } => {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store(base, offset, value, 1);
+                    self.compile_store(base.reg, offset, value.reg, 1);
                 }
                 Instruction::I32Store16 { memarg } => {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store(base, offset, value, 2);
+                    self.compile_store(base.reg, offset, value.reg, 2);
                 }
                 Instruction::MemorySize { mem } => {
                     if *mem != 0 {
@@ -187,7 +192,7 @@ impl X86JitCompiler {
                     }
 
                     let dst = self.reg_allocator.next();
-                    self.store_mem_page_size(dst);
+                    self.store_mem_page_size(dst.reg);
                 }
                 Instruction::MemoryGrow { mem } => {
                     if *mem != 0 {
@@ -196,15 +201,15 @@ impl X86JitCompiler {
 
                     let additional_pages = self.reg_allocator.pop();
 
-                    let old_mem_size = self.reg_allocator.new_spill(); // avoid aliasing
+                    let old_mem_size = self.reg_allocator.new_spill(ValueType::I32); // avoid aliasing
                     self.jit_linear_mem
-                        .read_memory_size_in_page(&mut self.jit, old_mem_size);
+                        .read_memory_size_in_page(&mut self.jit, old_mem_size.reg);
 
-                    self.compile_memory_grow(additional_pages);
+                    self.compile_memory_grow(additional_pages.reg);
                 }
                 Instruction::F64Const { value } => {
                     let reg = self.reg_allocator.next_xmm();
-                    self.mov_f64_to_reg(*value, reg);
+                    self.mov_f64_to_reg(*value, reg.reg);
                 }
                 Instruction::I32Unop(_) => todo!(),
                 Instruction::I32Binop(binop) => {
@@ -219,7 +224,11 @@ impl X86JitCompiler {
 
         // return...
         let stack_top = self.reg_allocator.top();
-        mov_reg_to_reg(&mut self.jit, Register::Reg(X64Register::Rax), stack_top);
+        mov_reg_to_reg(
+            &mut self.jit,
+            Register::Reg(X64Register::Rax),
+            stack_top.reg,
+        );
 
         self.epilogue(stack_size);
         monoasm!(
@@ -344,11 +353,11 @@ impl X86JitCompiler {
     fn setup_locals(&mut self, fdecl: &FuncDecl) -> Vec<ValueType> {
         let mut local_types = Vec::new();
         for (i, params) in fdecl.get_sig().params().iter().enumerate() {
-            let r = self.reg_allocator.new_spill();
+            let r = self.reg_allocator.new_spill(ValueType::I32);
 
             if i == 0 {
                 // store the first local to the base of the locals
-                match r {
+                match r.reg {
                     Register::Stack(o) => {
                         monoasm!(
                             &mut self.jit,
@@ -365,7 +374,7 @@ impl X86JitCompiler {
                     ValType::I32 => {
                         mov_reg_to_reg(
                             &mut self.jit,
-                            r,
+                            r.reg,
                             Register::from_ith_argument(i as u32, false),
                         );
                         local_types.push(ValueType::I32);
@@ -373,7 +382,7 @@ impl X86JitCompiler {
                     ValType::F64 => {
                         mov_reg_to_reg(
                             &mut self.jit,
-                            r,
+                            r.reg,
                             Register::from_ith_argument(i as u32, true),
                         );
                         local_types.push(ValueType::F64);
@@ -388,7 +397,7 @@ impl X86JitCompiler {
                             &mut self.jit,
                             movq R(REG_TEMP.as_index()), [rbp + ((i as i32 - 6) * 8 + 8)];
                         );
-                        mov_reg_to_reg(&mut self.jit, r, Register::Reg(REG_TEMP));
+                        mov_reg_to_reg(&mut self.jit, r.reg, Register::Reg(REG_TEMP));
                         local_types.push(ValueType::I32);
                     }
                     ValType::F64 => {
@@ -401,8 +410,8 @@ impl X86JitCompiler {
         }
 
         for l in fdecl.get_pure_locals() {
-            let r = self.reg_allocator.new_spill();
-            self.mov_i32_to_reg(0, r);
+            let r = self.reg_allocator.new_spill(ValueType::I32);
+            self.mov_i32_to_reg(0, r.reg);
 
             match l {
                 (_, ValType::I32) => local_types.push(ValueType::I32),

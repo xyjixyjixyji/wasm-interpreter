@@ -47,7 +47,7 @@ impl X86JitCompiler {
         // note that we don't want the return value to be in caller-saved registers
         // because we will pop them later in the call sequence
         let ret = self.reg_allocator.next_not_caller_saved();
-        mov_reg_to_reg(&mut self.jit, ret, Register::Reg(X64Register::Rax));
+        mov_reg_to_reg(&mut self.jit, ret.reg, Register::Reg(X64Register::Rax));
 
         // restore the stack spaced we used.....
         let restore_size = (std::cmp::max(6, callee_func.get_sig().params().len()) - 6) * 8;
@@ -77,6 +77,19 @@ impl X86JitCompiler {
         }
     }
 
+    /// compile the select instruction
+    /// select cond, a, b
+    /// if cond != 0, then set a to the result, otherwise set b
+    pub(crate) fn compile_select(
+        &mut self,
+        dst: Register,
+        cond: Register,
+        a: Register,
+        b: Register,
+    ) {
+        todo!()
+    }
+
     fn setup_function_call_arguments(&mut self, callee_func: &FuncDecl) {
         let params = callee_func.get_sig().params();
         let mut args = Vec::new();
@@ -90,7 +103,7 @@ impl X86JitCompiler {
 
         // Now process parameters and arguments from last to first
         for (i, param) in params.iter().enumerate().rev() {
-            let arg = args.pop().unwrap(); // Gets arguments from first to last
+            let arg = args.pop().unwrap().reg; // Gets arguments from first to last
             if i < 6 {
                 // Handle register arguments
                 match param {
