@@ -39,7 +39,7 @@ impl X86JitCompiler<'_> {
     }
 
     #[no_mangle]
-    pub(crate) extern "C" fn emit_call(&mut self, callee_func: &FuncDecl, callee_index: u32) {
+    pub(crate) extern "C" fn emit_call(&mut self, callee_index: u32) {
         let callee_label = *self.func_labels.get(callee_index as usize).unwrap();
         let callee_func = self.module.borrow().get_func(callee_index).unwrap().clone();
 

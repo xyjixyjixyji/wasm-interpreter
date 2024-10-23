@@ -37,8 +37,7 @@ impl X86JitCompiler<'_> {
                     );
                 }
                 Instruction::Call { func_idx } => {
-                    let callee_func = self.module.borrow().get_func(*func_idx).unwrap().clone();
-                    self.emit_call(&callee_func, *func_idx);
+                    self.emit_call(*func_idx);
                 }
                 Instruction::CallIndirect {
                     type_index,
