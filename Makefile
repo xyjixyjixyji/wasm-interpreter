@@ -5,10 +5,6 @@
 all: build build-tests
 
 build:
-	cargo build --release
-	ln -sf target/release/wasm-interpreter-rs ./wasm-vm
-
-build-debug:
 	cargo build
 	ln -sf target/debug/wasm-interpreter-rs ./wasm-vm
 
