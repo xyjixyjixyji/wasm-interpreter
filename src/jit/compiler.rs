@@ -143,7 +143,10 @@ impl X86JitCompiler {
                     let dst = self.reg_allocator.next().reg;
                     self.compile_local_get(dst, *local_idx, &local_types);
                 }
-                Instruction::LocalSet { local_idx } => todo!(),
+                Instruction::LocalSet { local_idx } => {
+                    let value = self.reg_allocator.pop();
+                    self.compile_local_set(value.reg, *local_idx, &local_types);
+                }
                 Instruction::LocalTee { local_idx } => todo!(),
                 Instruction::GlobalGet { global_idx } => todo!(),
                 Instruction::GlobalSet { global_idx } => todo!(),

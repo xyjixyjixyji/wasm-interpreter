@@ -1,6 +1,8 @@
 use crate::jit::{
     mov_reg_to_reg,
-    regalloc::{Register, X64Register, REG_LOCAL_BASE, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2},
+    regalloc::{
+        Register, X64Register, REG_LOCAL_BASE, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2, REG_TEMP_FP,
+    },
     ValueType, X86JitCompiler,
 };
 
@@ -14,18 +16,49 @@ impl X86JitCompiler {
         local_idx: u32,
         local_types: &[ValueType],
     ) {
-        let local_type = local_types[local_idx as usize];
-        match local_type {
+        let ty = local_types[local_idx as usize];
+        match ty {
             ValueType::I32 => {
                 monoasm!(
                     &mut self.jit,
                     movq R(REG_TEMP.as_index()), R(REG_LOCAL_BASE.as_index()); // reg_temp = reg_local_base
-                    addq R(REG_TEMP.as_index()), (local_idx * 8); // reg_temp = reg_local_base + local_idx * 8
-                    movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // reg_temp = *reg_temp
+                    movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index()) + ((local_idx * 8) as u32)];
                 );
                 mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
             }
-            ValueType::F64 => todo!(),
+            ValueType::F64 => {
+                monoasm!(
+                    &mut self.jit,
+                    movq R(REG_TEMP.as_index()), R(REG_LOCAL_BASE.as_index()); // reg_temp = reg_local_base
+                    movq xmm(REG_TEMP_FP.as_index()), [R(REG_TEMP.as_index()) + ((local_idx * 8) as u32)];
+                );
+                mov_reg_to_reg(&mut self.jit, dst, Register::FpReg(REG_TEMP_FP));
+            }
+        }
+    }
+
+    pub(crate) fn compile_local_set(
+        &mut self,
+        value: Register,
+        local_idx: u32,
+        local_types: &[ValueType],
+    ) {
+        let ty = local_types[local_idx as usize];
+        match ty {
+            ValueType::I32 => {
+                mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), value);
+                monoasm!(
+                    &mut self.jit,
+                    movq [R(REG_LOCAL_BASE.as_index()) + ((local_idx * 8) as u32)], R(REG_TEMP2.as_index());
+                );
+            }
+            ValueType::F64 => {
+                mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), value);
+                monoasm!(
+                    &mut self.jit,
+                    movsd [R(REG_LOCAL_BASE.as_index()) + ((local_idx * 8) as u32)], xmm(REG_TEMP_FP.as_index());
+                );
+            }
         }
     }
 
