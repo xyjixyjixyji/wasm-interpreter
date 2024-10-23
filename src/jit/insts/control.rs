@@ -4,19 +4,45 @@ use wasmparser::ValType;
 
 use crate::{
     jit::{
-        regalloc::{RegWithType, Register, X64Register, REG_TEMP},
-        utils::mov_reg_to_reg,
+        regalloc::{RegWithType, Register, X64Register, REG_TEMP, REG_TEMP2},
+        utils::emit_mov_reg_to_reg,
         X86JitCompiler,
     },
     module::components::FuncDecl,
 };
 
-impl X86JitCompiler {
+impl X86JitCompiler<'_> {
     /// compile the call_indirect instruction
     /// we get the callee label and emit the call instruction sequence
-    pub(crate) fn emit_call_indirect(&mut self, type_index: u32, table_index: u32) {}
+    /// TODO: check signature type match in type section
+    pub(crate) fn emit_call_indirect(
+        &mut self,
+        callee_index_in_table: Register,
+        _type_index: u32,
+        table_index: u32,
+    ) {
+        // get the callee label by reading the table
+        let table_data = self.tables.get(table_index as usize).unwrap().as_ptr();
 
-    pub(crate) fn emit_call(&mut self, callee_func: &FuncDecl, callee: DestLabel) {
+        emit_mov_reg_to_reg(
+            &mut self.jit,
+            Register::Reg(REG_TEMP2),
+            callee_index_in_table,
+        ); // reg_temp2 = ind
+
+        monoasm!(
+            &mut self.jit,
+            movq R(REG_TEMP.as_index()), (table_data);
+            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index()) + R(REG_TEMP2.as_index()) * 4];
+            movl R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // reg_temp = func_index
+        );
+    }
+
+    #[no_mangle]
+    pub(crate) extern "C" fn emit_call(&mut self, callee_func: &FuncDecl, callee_index: u32) {
+        let callee_label = *self.func_labels.get(callee_index as usize).unwrap();
+        let callee_func = self.module.borrow().get_func(callee_index).unwrap().clone();
+
         // save caller-saved registers
         let caller_saved_regs = self.reg_allocator.get_used_caller_saved_registers();
 
@@ -40,18 +66,18 @@ impl X86JitCompiler {
         }
 
         // setup arguments, top of the stack is the last argument
-        self.setup_function_call_arguments(callee_func);
+        self.setup_function_call_arguments(&callee_func);
 
         // call the callee! and move the return value into the stack
         monoasm!(
             &mut self.jit,
-            call callee;
+            call callee_label;
         );
 
         // note that we don't want the return value to be in caller-saved registers
         // because we will pop them later in the call sequence
         let ret = self.reg_allocator.next_not_caller_saved();
-        mov_reg_to_reg(&mut self.jit, ret.reg, Register::Reg(X64Register::Rax));
+        emit_mov_reg_to_reg(&mut self.jit, ret.reg, Register::Reg(X64Register::Rax));
 
         // restore the stack spaced we used.....
         let restore_size = (std::cmp::max(6, callee_func.get_sig().params().len()) - 6) * 8;
@@ -93,19 +119,19 @@ impl X86JitCompiler {
     ) {
         let cond_is_zero = self.jit.label();
         let end_label = self.jit.label();
-        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), cond.reg);
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), cond.reg);
         monoasm!(
             &mut self.jit,
             cmpq R(REG_TEMP.as_index()), 0;
             je cond_is_zero;
         );
-        mov_reg_to_reg(&mut self.jit, dst.reg, a.reg); // cond != 0, set a
+        emit_mov_reg_to_reg(&mut self.jit, dst.reg, a.reg); // cond != 0, set a
         monoasm!(
             &mut self.jit,
             jmp end_label;
         cond_is_zero: // cond == 0, set b
         );
-        mov_reg_to_reg(&mut self.jit, dst.reg, b.reg);
+        emit_mov_reg_to_reg(&mut self.jit, dst.reg, b.reg);
         monoasm!(
             &mut self.jit,
         end_label:
@@ -130,14 +156,14 @@ impl X86JitCompiler {
                 // Handle register arguments
                 match param {
                     ValType::I32 => {
-                        mov_reg_to_reg(
+                        emit_mov_reg_to_reg(
                             &mut self.jit,
                             Register::from_ith_argument(i as u32, false),
                             arg,
                         );
                     }
                     ValType::F64 => {
-                        mov_reg_to_reg(
+                        emit_mov_reg_to_reg(
                             &mut self.jit,
                             Register::from_ith_argument(i as u32, true),
                             arg,

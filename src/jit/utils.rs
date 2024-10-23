@@ -7,7 +7,7 @@ use monoasm::*;
 use monoasm_macro::monoasm;
 
 /// This uses REG_TEMP as a temporary register only.
-pub(crate) fn mov_reg_to_reg(jit: &mut JitMemory, dst: Register, src: Register) {
+pub(crate) fn emit_mov_reg_to_reg(jit: &mut JitMemory, dst: Register, src: Register) {
     if dst == src {
         return;
     }
@@ -71,8 +71,8 @@ pub(crate) fn mov_reg_to_reg(jit: &mut JitMemory, dst: Register, src: Register) 
     }
 }
 
-impl X86JitCompiler {
-    pub(crate) fn mov_i32_to_reg(&mut self, value: i32, reg: Register) {
+impl X86JitCompiler<'_> {
+    pub(crate) fn emit_mov_i32_to_reg(&mut self, value: i32, reg: Register) {
         match reg {
             Register::Reg(r) => {
                 monoasm!(
@@ -90,7 +90,7 @@ impl X86JitCompiler {
         }
     }
 
-    pub(crate) fn mov_f64_to_reg(&mut self, value: f64, reg: Register) {
+    pub(crate) fn emit_mov_f64_to_reg(&mut self, value: f64, reg: Register) {
         let bits = value.to_bits();
         match reg {
             Register::FpReg(r) => {

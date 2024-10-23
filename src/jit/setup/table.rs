@@ -1,15 +1,11 @@
-use std::rc::Rc;
+use crate::jit::X86JitCompiler;
 
-use debug_cell::RefCell;
-
-use crate::{jit::X86JitCompiler, module::wasm_module::WasmModule};
-
-impl X86JitCompiler {
+impl X86JitCompiler<'_> {
     // table are setup using the element section
-    pub(crate) fn setup_tables(&mut self, module: Rc<RefCell<WasmModule>>) {
+    pub(crate) fn setup_tables(&mut self) {
         let mut n_tables = 0;
 
-        let module_ref = module.borrow();
+        let module_ref = self.module.borrow();
         let elems = module_ref.get_elems();
         for elem in elems {
             let ind: u32;

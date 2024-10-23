@@ -4,7 +4,7 @@ use monoasm_macro::monoasm;
 use crate::{
     jit::{
         regalloc::{REG_MEMORY_BASE, REG_TEMP, REG_TEMP2},
-        utils::mov_reg_to_reg,
+        utils::emit_mov_reg_to_reg,
     },
     vm::WASM_DEFAULT_PAGE_SIZE_BYTE,
 };
@@ -50,7 +50,7 @@ impl JitLinearMemory {
 
     pub fn grow(&mut self, jit: &mut JitMemory, npages: Register) {
         // get the old size
-        mov_reg_to_reg(jit, Register::Reg(REG_TEMP2), npages); // reg_temp2 = npages
+        emit_mov_reg_to_reg(jit, Register::Reg(REG_TEMP2), npages); // reg_temp2 = npages
         self.read_memory_size_in_page(jit, Register::Reg(REG_TEMP)); // reg_temp = old_size
 
         // add the old size and npages
@@ -101,7 +101,7 @@ impl JitLinearMemory {
             movq R(REG_TEMP.as_index()), (mem_size_addr);
             movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
         );
-        mov_reg_to_reg(jit, dst, Register::Reg(REG_TEMP));
+        emit_mov_reg_to_reg(jit, dst, Register::Reg(REG_TEMP));
     }
 
     fn get_mem_size_addr(&self) -> u64 {

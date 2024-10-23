@@ -1,28 +1,22 @@
-use std::{collections::HashMap, rc::Rc};
-
 use crate::{
     jit::{ValueType, X86JitCompiler},
-    module::{insts::Instruction, wasm_module::WasmModule},
+    module::insts::Instruction,
 };
 
 use anyhow::{anyhow, Result};
-use debug_cell::RefCell;
-use monoasm::*;
 use monoasm_macro::monoasm;
 
-impl X86JitCompiler {
+impl X86JitCompiler<'_> {
     pub(crate) fn emit_asm(
         &mut self,
-        module: Rc<RefCell<WasmModule>>,
         insts: &[Instruction],
         local_types: &[ValueType],
-        func_to_label: &HashMap<usize, DestLabel>,
     ) -> Result<()> {
         for inst in insts {
             match inst {
                 Instruction::I32Const { value } => {
                     let reg = self.reg_allocator.next();
-                    self.mov_i32_to_reg(*value, reg.reg);
+                    self.emit_mov_i32_to_reg(*value, reg.reg);
                 }
                 Instruction::Unreachable => {
                     self.emit_trap();
@@ -43,16 +37,16 @@ impl X86JitCompiler {
                     );
                 }
                 Instruction::Call { func_idx } => {
-                    let label = func_to_label.get(&(*func_idx as usize)).unwrap();
-                    let callee_func = module.borrow().get_func(*func_idx).unwrap().clone();
-
-                    // compile the call instruction
-                    self.emit_call(&callee_func, *label);
+                    let callee_func = self.module.borrow().get_func(*func_idx).unwrap().clone();
+                    self.emit_call(&callee_func, *func_idx);
                 }
                 Instruction::CallIndirect {
                     type_index,
                     table_index,
-                } => todo!(),
+                } => {
+                    let callee_index_in_table = self.reg_allocator.pop();
+                    self.emit_call_indirect(callee_index_in_table.reg, *type_index, *table_index);
+                }
                 Instruction::Drop => {
                     self.reg_allocator.pop();
                 }
@@ -128,8 +122,9 @@ impl X86JitCompiler {
                     }
 
                     let additional_pages = self.reg_allocator.pop();
+                    // use a spill register to avoid aliasing
+                    let old_mem_size = self.reg_allocator.new_spill(ValueType::I32);
 
-                    let old_mem_size = self.reg_allocator.new_spill(ValueType::I32); // avoid aliasing
                     self.linear_mem
                         .read_memory_size_in_page(&mut self.jit, old_mem_size.reg);
 
@@ -137,7 +132,7 @@ impl X86JitCompiler {
                 }
                 Instruction::F64Const { value } => {
                     let reg = self.reg_allocator.next_xmm();
-                    self.mov_f64_to_reg(*value, reg.reg);
+                    self.emit_mov_f64_to_reg(*value, reg.reg);
                 }
                 Instruction::I32Unop(_) => todo!(),
                 Instruction::I32Binop(binop) => {

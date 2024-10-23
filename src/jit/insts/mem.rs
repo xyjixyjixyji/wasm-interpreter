@@ -2,14 +2,14 @@ use crate::jit::{
     regalloc::{
         Register, X64Register, REG_LOCAL_BASE, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2, REG_TEMP_FP,
     },
-    utils::mov_reg_to_reg,
+    utils::emit_mov_reg_to_reg,
     ValueType, X86JitCompiler,
 };
 
 use monoasm::*;
 use monoasm_macro::monoasm;
 
-impl X86JitCompiler {
+impl X86JitCompiler<'_> {
     pub(crate) fn emit_local_get(
         &mut self,
         dst: Register,
@@ -25,7 +25,7 @@ impl X86JitCompiler {
                     movq R(REG_TEMP.as_index()), R(REG_LOCAL_BASE.as_index()); // reg_temp = reg_local_base
                     movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index()) + (offset)];
                 );
-                mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
+                emit_mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
             }
             ValueType::F64 => {
                 monoasm!(
@@ -33,7 +33,7 @@ impl X86JitCompiler {
                     movq R(REG_TEMP.as_index()), R(REG_LOCAL_BASE.as_index()); // reg_temp = reg_local_base
                     movq xmm(REG_TEMP_FP.as_index()), [R(REG_TEMP.as_index()) + (offset)];
                 );
-                mov_reg_to_reg(&mut self.jit, dst, Register::FpReg(REG_TEMP_FP));
+                emit_mov_reg_to_reg(&mut self.jit, dst, Register::FpReg(REG_TEMP_FP));
             }
         }
     }
@@ -48,14 +48,14 @@ impl X86JitCompiler {
         let offset = local_idx * 8;
         match ty {
             ValueType::I32 => {
-                mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), value);
+                emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), value);
                 monoasm!(
                     &mut self.jit,
                     movq [R(REG_LOCAL_BASE.as_index()) + (offset)], R(REG_TEMP2.as_index());
                 );
             }
             ValueType::F64 => {
-                mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), value);
+                emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), value);
                 monoasm!(
                     &mut self.jit,
                     movsd [R(REG_LOCAL_BASE.as_index()) + (offset)], xmm(REG_TEMP_FP.as_index());
@@ -101,7 +101,7 @@ impl X86JitCompiler {
             _ => unreachable!("invalid width: {}", width),
         }
 
-        mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
+        emit_mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
     }
 
     pub(crate) fn emit_store_mem(
@@ -119,7 +119,7 @@ impl X86JitCompiler {
             addq R(REG_TEMP.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp = reg_memory_base + effective_addr
         );
 
-        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), value); // <-- reg_temp = value
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), value); // <-- reg_temp = value
 
         match width {
             8 => {
@@ -156,7 +156,7 @@ impl X86JitCompiler {
 
     /// REG_TEMP will store the effective address + width
     fn get_effective_address(&mut self, dst: X64Register, base: Register, offset: u32) {
-        mov_reg_to_reg(&mut self.jit, Register::Reg(dst), base); // <-- reg_temp2 = base
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(dst), base); // <-- reg_temp2 = base
         monoasm!(
             &mut self.jit,
             addq R(dst.as_index()), (offset);

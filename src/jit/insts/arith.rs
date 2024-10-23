@@ -3,7 +3,7 @@ use crate::{
         regalloc::{
             RegWithType, Register, X64Register, REG_TEMP, REG_TEMP2, REG_TEMP_FP, REG_TEMP_FP2,
         },
-        utils::mov_reg_to_reg,
+        utils::emit_mov_reg_to_reg,
         ValueType, X86JitCompiler,
     },
     module::insts::{F64Binop, I32Binop},
@@ -12,14 +12,14 @@ use crate::{
 use monoasm::*;
 use monoasm_macro::monoasm;
 
-impl X86JitCompiler {
+impl X86JitCompiler<'_> {
     // jit compile *a = a op b*
     pub(crate) fn emit_f64_binop(&mut self, binop: &F64Binop) {
         let b = self.reg_allocator.pop().reg;
         let a = self.reg_allocator.pop().reg;
 
-        mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), a);
-        mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP2), b);
+        emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), a);
+        emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP2), b);
 
         match binop {
             F64Binop::Add => {
@@ -41,7 +41,7 @@ impl X86JitCompiler {
             F64Binop::Max => todo!(),
         }
 
-        mov_reg_to_reg(&mut self.jit, a, Register::FpReg(REG_TEMP_FP));
+        emit_mov_reg_to_reg(&mut self.jit, a, Register::FpReg(REG_TEMP_FP));
         self.reg_allocator.push(RegWithType::new(a, ValueType::F64));
     }
 
@@ -49,8 +49,8 @@ impl X86JitCompiler {
         let b = self.reg_allocator.pop();
         let a = self.reg_allocator.pop();
 
-        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), a.reg);
-        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), b.reg);
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), a.reg);
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), b.reg);
 
         match binop {
             I32Binop::Eq => {
@@ -177,13 +177,13 @@ impl X86JitCompiler {
                     idiv R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
                 );
                 if matches!(binop, I32Binop::DivS) {
-                    mov_reg_to_reg(
+                    emit_mov_reg_to_reg(
                         &mut self.jit,
                         Register::Reg(REG_TEMP),
                         Register::Reg(X64Register::Rax),
                     );
                 } else {
-                    mov_reg_to_reg(
+                    emit_mov_reg_to_reg(
                         &mut self.jit,
                         Register::Reg(REG_TEMP),
                         Register::Reg(X64Register::Rdx),
@@ -218,13 +218,13 @@ impl X86JitCompiler {
                     div R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
                 );
                 if matches!(binop, I32Binop::DivU) {
-                    mov_reg_to_reg(
+                    emit_mov_reg_to_reg(
                         &mut self.jit,
                         Register::Reg(REG_TEMP),
                         Register::Reg(X64Register::Rax),
                     );
                 } else {
-                    mov_reg_to_reg(
+                    emit_mov_reg_to_reg(
                         &mut self.jit,
                         Register::Reg(REG_TEMP),
                         Register::Reg(X64Register::Rdx),
@@ -261,7 +261,7 @@ impl X86JitCompiler {
             I32Binop::Rotr => todo!(),
         }
 
-        mov_reg_to_reg(&mut self.jit, a.reg, Register::Reg(REG_TEMP));
+        emit_mov_reg_to_reg(&mut self.jit, a.reg, Register::Reg(REG_TEMP));
         self.reg_allocator.push(a);
     }
 }

@@ -1,10 +1,7 @@
-use std::rc::Rc;
-
 use anyhow::Result;
-use debug_cell::RefCell;
 use monoasm::*;
 
-use crate::module::{value_type::WasmValue, wasm_module::WasmModule};
+use crate::module::value_type::WasmValue;
 
 pub use compiler::X86JitCompiler;
 pub use mem::JitLinearMemory;
@@ -28,7 +25,6 @@ pub(crate) enum ValueType {
 pub trait WasmJitCompiler {
     fn compile(
         &mut self,
-        module: Rc<RefCell<WasmModule>>,
         initial_mem_size_in_byte: u64,
         main_params: Vec<WasmValue>,
     ) -> Result<CodePtr>;
