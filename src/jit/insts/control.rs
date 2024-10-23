@@ -4,9 +4,9 @@ use wasmparser::ValType;
 
 use crate::{
     jit::{
-        mov_reg_to_reg,
         regalloc::{RegWithType, Register, X64Register, REG_TEMP},
-        ValueType, X86JitCompiler,
+        utils::mov_reg_to_reg,
+        X86JitCompiler,
     },
     module::components::FuncDecl,
 };

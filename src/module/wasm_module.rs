@@ -148,6 +148,10 @@ impl<'a> WasmModule<'a> {
         &self.funcs
     }
 
+    pub fn get_func_index(&self, func: &FuncDecl) -> Option<usize> {
+        self.funcs.iter().position(|f| f == func)
+    }
+
     pub fn get_data_count(&self) -> Option<u32> {
         self.data_count
     }

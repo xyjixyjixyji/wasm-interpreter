@@ -1,8 +1,8 @@
 use crate::jit::{
-    mov_reg_to_reg,
     regalloc::{
         Register, X64Register, REG_LOCAL_BASE, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2, REG_TEMP_FP,
     },
+    utils::mov_reg_to_reg,
     ValueType, X86JitCompiler,
 };
 
@@ -63,7 +63,7 @@ impl X86JitCompiler {
     }
 
     pub(crate) fn compile_memory_grow(&mut self, npages: Register) {
-        self.jit_linear_mem.grow(&mut self.jit, npages);
+        self.linear_mem.grow(&mut self.jit, npages);
     }
 
     pub(crate) fn compile_load(&mut self, dst: Register, base: Register, offset: u32, width: u32) {
@@ -149,8 +149,7 @@ impl X86JitCompiler {
     }
 
     pub(crate) fn store_mem_page_size(&mut self, dst: Register) {
-        self.jit_linear_mem
-            .read_memory_size_in_page(&mut self.jit, dst);
+        self.linear_mem.read_memory_size_in_page(&mut self.jit, dst);
     }
 
     /// REG_TEMP will store the effective address + width

@@ -3,14 +3,14 @@ use std::rc::Rc;
 
 use super::regalloc::{Register, X64Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_TEMP};
 use super::{JitLinearMemory, ValueType, WasmJitCompiler};
-use crate::jit::mov_reg_to_reg;
 use crate::jit::regalloc::REG_TEMP_FP;
+use crate::jit::utils::mov_reg_to_reg;
 use crate::module::components::FuncDecl;
 use crate::module::insts::Instruction;
 use crate::module::value_type::WasmValue;
 use crate::module::wasm_module::WasmModule;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use debug_cell::RefCell;
 use monoasm::{CodePtr, DestLabel, Disp, Imm, JitMemory, Reg, Rm, Scale};
 use monoasm_macro::monoasm;
@@ -18,10 +18,27 @@ use wasmparser::ValType;
 
 // Jit compile through abstract interpretation
 pub struct X86JitCompiler {
+    /// Register allocator, simply a register stack that controls what we can
+    /// use in the current context
     pub(crate) reg_allocator: X86RegisterAllocator,
+
+    /// In memory assembler
     pub(crate) jit: JitMemory,
+
+    /// Linear memory
+    pub(crate) linear_mem: JitLinearMemory,
+
+    // table stores functions or expressions
+    pub(crate) tables: Vec<Vec<u32>>,
+
+    // global variables, we separate the type from the value to get a more
+    // consistent memory layout so that we can get the global's value in asm
+    // more easily
+    pub(crate) globals: Vec<u64>,
+    pub(crate) global_types: Vec<ValueType>, // used statically for type checking
+
+    /// Trap entry label
     pub(crate) trap_label: DestLabel,
-    pub(crate) jit_linear_mem: JitLinearMemory,
 }
 
 impl X86JitCompiler {
@@ -32,8 +49,11 @@ impl X86JitCompiler {
         let mut compiler = Self {
             reg_allocator: X86RegisterAllocator::new(),
             jit,
+            linear_mem: JitLinearMemory::new(),
+            tables: vec![],
+            globals: vec![],
+            global_types: vec![],
             trap_label,
-            jit_linear_mem: JitLinearMemory::new(),
         };
 
         compiler.setup_trap_entry();
@@ -63,14 +83,13 @@ impl WasmJitCompiler for X86JitCompiler {
             self.setup_vm_entry(*main_label, initial_mem_size_in_byte, main_params);
 
         // compile all functions
-        for (i, fdecl) in module.borrow().get_funcs().iter().enumerate() {
-            let func_begin_label = func_to_label.get(&i).unwrap();
-            self.compile_func(Rc::clone(&module), fdecl, *func_begin_label, &func_to_label)?;
+        for fdecl in module.borrow().get_funcs().iter() {
+            self.compile_func(Rc::clone(&module), fdecl, &func_to_label)?;
         }
 
         self.jit.finalize();
 
-        // return vm_entry address
+        // return vm_entry address for initial execution
         let codeptr = self.jit.get_label_u64(vm_entry_label);
 
         log::debug!("\n{}", self.jit.dump_code().unwrap());
@@ -83,15 +102,17 @@ impl X86JitCompiler {
         &mut self,
         module: Rc<RefCell<WasmModule>>,
         fdecl: &FuncDecl,
-        func_begin_label: DestLabel,
         func_to_label: &HashMap<usize, DestLabel>,
     ) -> Result<()> {
+        let func_index = module.borrow().get_func_index(fdecl).unwrap();
+        let func_begin_label = func_to_label.get(&func_index).unwrap().clone();
+        self.reg_allocator.reset();
+
+        // start compilation
         monoasm!(
             &mut self.jit,
             func_begin_label:
         );
-
-        self.reg_allocator.reset();
 
         let stack_size = self.get_stack_size_in_byte(fdecl);
         self.prologue(stack_size);
@@ -99,137 +120,16 @@ impl X86JitCompiler {
         // setup locals
         let local_types = self.setup_locals(fdecl);
 
-        for inst in fdecl.get_insts() {
-            match inst {
-                Instruction::I32Const { value } => {
-                    let reg = self.reg_allocator.next();
-                    self.mov_i32_to_reg(*value, reg.reg);
-                }
-                Instruction::Unreachable => {
-                    self.trap();
-                }
-                Instruction::Nop => {}
-                Instruction::Block { ty } => todo!(),
-                Instruction::Loop { ty } => todo!(),
-                Instruction::If { ty } => todo!(),
-                Instruction::Else => todo!(),
-                Instruction::End => {}
-                Instruction::Br { rel_depth } => todo!(),
-                Instruction::BrIf { rel_depth } => todo!(),
-                Instruction::BrTable { table } => todo!(),
-                Instruction::Return => {
-                    monoasm!(
-                        &mut self.jit,
-                        ret;
-                    );
-                }
-                Instruction::Call { func_idx } => {
-                    let label = func_to_label.get(&(*func_idx as usize)).unwrap();
-                    let callee_func = module.borrow().get_func(*func_idx).unwrap().clone();
+        self.setup_tables(Rc::clone(&module));
 
-                    // compile the call instruction
-                    self.compile_call(&callee_func, *label);
-                }
-                Instruction::CallIndirect {
-                    type_index,
-                    table_index,
-                } => todo!(),
-                Instruction::Drop => {
-                    self.reg_allocator.pop();
-                }
-                Instruction::Select => {
-                    let cond = self.reg_allocator.pop();
-                    let b = self.reg_allocator.pop();
-                    let a = self.reg_allocator.pop();
-                    self.compile_select(a, cond, b, a);
-                    self.reg_allocator.push(a);
-                }
-                Instruction::LocalGet { local_idx } => {
-                    let dst = self.reg_allocator.next().reg;
-                    self.compile_local_get(dst, *local_idx, &local_types);
-                }
-                Instruction::LocalSet { local_idx } => {
-                    let value = self.reg_allocator.pop();
-                    self.compile_local_set(value.reg, *local_idx, &local_types);
-                }
-                Instruction::LocalTee { local_idx } => todo!(),
-                Instruction::GlobalGet { global_idx } => todo!(),
-                Instruction::GlobalSet { global_idx } => todo!(),
-                Instruction::I32Load { memarg } => {
-                    let base = self.reg_allocator.pop();
-                    let offset = memarg.offset;
-                    let dst = self.reg_allocator.next().reg;
-                    self.compile_load(dst, base.reg, offset, 4);
-                }
-                Instruction::F64Load { memarg } => {
-                    let base = self.reg_allocator.pop();
-                    let offset = memarg.offset;
-                    let dst = self.reg_allocator.next().reg;
-                    self.compile_load(dst, base.reg, offset, 8);
-                }
-                Instruction::I32Load8S { memarg } => todo!(),
-                Instruction::I32Load8U { memarg } => todo!(),
-                Instruction::I32Load16S { memarg } => todo!(),
-                Instruction::I32Load16U { memarg } => todo!(),
-                Instruction::I32Store { memarg } => {
-                    let value = self.reg_allocator.pop();
-                    let offset = memarg.offset;
-                    let base = self.reg_allocator.pop();
-                    self.compile_store(base.reg, offset, value.reg, 4);
-                }
-                Instruction::F64Store { memarg } => {
-                    let value = self.reg_allocator.pop();
-                    let offset = memarg.offset;
-                    let base = self.reg_allocator.pop();
-                    self.compile_store(base.reg, offset, value.reg, 8);
-                }
-                Instruction::I32Store8 { memarg } => {
-                    let value = self.reg_allocator.pop();
-                    let offset = memarg.offset;
-                    let base = self.reg_allocator.pop();
-                    self.compile_store(base.reg, offset, value.reg, 1);
-                }
-                Instruction::I32Store16 { memarg } => {
-                    let value = self.reg_allocator.pop();
-                    let offset = memarg.offset;
-                    let base = self.reg_allocator.pop();
-                    self.compile_store(base.reg, offset, value.reg, 2);
-                }
-                Instruction::MemorySize { mem } => {
-                    if *mem != 0 {
-                        return Err(anyhow!("memory.size: invalid memory index"));
-                    }
+        // TODO: setup globals
 
-                    let dst = self.reg_allocator.next();
-                    self.store_mem_page_size(dst.reg);
-                }
-                Instruction::MemoryGrow { mem } => {
-                    if *mem != 0 {
-                        return Err(anyhow!("memory.size: invalid memory index"));
-                    }
-
-                    let additional_pages = self.reg_allocator.pop();
-
-                    let old_mem_size = self.reg_allocator.new_spill(ValueType::I32); // avoid aliasing
-                    self.jit_linear_mem
-                        .read_memory_size_in_page(&mut self.jit, old_mem_size.reg);
-
-                    self.compile_memory_grow(additional_pages.reg);
-                }
-                Instruction::F64Const { value } => {
-                    let reg = self.reg_allocator.next_xmm();
-                    self.mov_f64_to_reg(*value, reg.reg);
-                }
-                Instruction::I32Unop(_) => todo!(),
-                Instruction::I32Binop(binop) => {
-                    self.compile_i32_binop(binop);
-                }
-                Instruction::F64Unop(_) => todo!(),
-                Instruction::F64Binop(binop) => {
-                    self.compile_f64_binop(binop);
-                }
-            }
-        }
+        self.emit_asm(
+            Rc::clone(&module),
+            &fdecl.get_insts(),
+            &local_types,
+            func_to_label,
+        )?;
 
         // return...
         let stack_top = self.reg_allocator.top();
@@ -252,44 +152,6 @@ impl X86JitCompiler {
 }
 
 impl X86JitCompiler {
-    fn mov_i32_to_reg(&mut self, value: i32, reg: Register) {
-        match reg {
-            Register::Reg(r) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq R(r.as_index()), (value);
-                );
-            }
-            Register::Stack(offset) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq [rsp + (offset)], (value);
-                );
-            }
-            Register::FpReg(_) => panic!("invalid mov for i32 to fp reg"),
-        }
-    }
-
-    fn mov_f64_to_reg(&mut self, value: f64, reg: Register) {
-        let bits = value.to_bits();
-        match reg {
-            Register::FpReg(r) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq R(REG_TEMP.as_index()), (bits);
-                    movq xmm(r.as_index()), R(REG_TEMP.as_index());
-                );
-            }
-            Register::Stack(offset) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq [rsp + (offset)], (bits);
-                );
-            }
-            _ => panic!("invalid mov for f32 to normal reg"),
-        }
-    }
-
     fn setup_trap_entry(&mut self) -> DestLabel {
         let trap_label = self.trap_label;
         monoasm!(
@@ -315,7 +177,7 @@ impl X86JitCompiler {
         );
 
         // setup linear memory info
-        self.jit_linear_mem
+        self.linear_mem
             .init_size(&mut self.jit, initial_mem_size_in_byte);
 
         // setup main params
@@ -435,14 +297,6 @@ impl X86JitCompiler {
         self.reg_allocator.clear_vec();
 
         local_types
-    }
-
-    fn trap(&mut self) {
-        let trap_label = self.trap_label;
-        monoasm!(
-            &mut self.jit,
-            jmp trap_label;
-        );
     }
 
     fn prologue(&mut self, stack_size: u64) {

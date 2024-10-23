@@ -3,8 +3,8 @@ use monoasm_macro::monoasm;
 
 use crate::{
     jit::{
-        mov_reg_to_reg,
         regalloc::{REG_MEMORY_BASE, REG_TEMP, REG_TEMP2},
+        utils::mov_reg_to_reg,
     },
     vm::WASM_DEFAULT_PAGE_SIZE_BYTE,
 };

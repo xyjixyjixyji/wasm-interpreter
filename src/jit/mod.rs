@@ -10,7 +10,7 @@ use crate::module::{value_type::WasmValue, wasm_module::WasmModule};
 
 pub use compiler::X86JitCompiler;
 pub use mem::JitLinearMemory;
-pub use trap::register_trap_handler;
+pub use setup::trap::register_trap_handler;
 
 pub type ReturnFunc = extern "C" fn() -> u64;
 
@@ -18,7 +18,8 @@ mod compiler;
 mod insts;
 mod mem;
 mod regalloc;
-mod trap;
+mod setup;
+mod utils;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ValueType {
@@ -35,67 +36,3 @@ pub trait WasmJitCompiler {
     ) -> Result<CodePtr>;
 }
 
-/// This uses REG_TEMP as a temporary register only.
-pub(crate) fn mov_reg_to_reg(jit: &mut JitMemory, dst: Register, src: Register) {
-    if dst == src {
-        return;
-    }
-
-    match (dst, src) {
-        (Register::Stack(o_dst), Register::Stack(o_src)) => {
-            monoasm!(
-                &mut *jit,
-                movq R(REG_TEMP.as_index()), [rsp + (o_src)];
-                movq [rsp + (o_dst)], R(REG_TEMP.as_index());
-            );
-        }
-        (Register::Reg(r_dst), Register::Stack(o_src)) => {
-            monoasm!(
-                &mut *jit,
-                movq R(r_dst.as_index()), [rsp + (o_src)];
-            );
-        }
-        (Register::FpReg(fpr_dst), Register::Stack(o_src)) => {
-            monoasm!(
-                &mut *jit,
-                movq xmm(fpr_dst.as_index()), [rsp + (o_src)];
-            );
-        }
-        (Register::Reg(r_dst), Register::Reg(r_src)) => {
-            monoasm!(
-                &mut *jit,
-                movq R(r_dst.as_index()), R(r_src.as_index());
-            );
-        }
-        (Register::Reg(r_dst), Register::FpReg(fpr_src)) => {
-            monoasm!(
-                &mut *jit,
-                movq R(r_dst.as_index()), xmm(fpr_src.as_index());
-            );
-        }
-        (Register::FpReg(fpr_dst), Register::Reg(r_src)) => {
-            monoasm!(
-                &mut *jit,
-                movq xmm(fpr_dst.as_index()), R(r_src.as_index());
-            );
-        }
-        (Register::FpReg(fpr_dst), Register::FpReg(fpr_src)) => {
-            monoasm!(
-                &mut *jit,
-                movq xmm(fpr_dst.as_index()), xmm(fpr_src.as_index());
-            );
-        }
-        (Register::Stack(o_dst), Register::Reg(r_src)) => {
-            monoasm!(
-                &mut *jit,
-                movq [rsp + (o_dst)], R(r_src.as_index());
-            );
-        }
-        (Register::Stack(o_dst), Register::FpReg(fpr_src)) => {
-            monoasm!(
-                &mut *jit,
-                movq [rsp + (o_dst)], xmm(fpr_src.as_index());
-            );
-        }
-    }
-}

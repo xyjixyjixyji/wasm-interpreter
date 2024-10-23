@@ -1,9 +1,9 @@
 use crate::{
     jit::{
-        mov_reg_to_reg,
         regalloc::{
             RegWithType, Register, X64Register, REG_TEMP, REG_TEMP2, REG_TEMP_FP, REG_TEMP_FP2,
         },
+        utils::mov_reg_to_reg,
         ValueType, X86JitCompiler,
     },
     module::insts::{F64Binop, I32Binop},
