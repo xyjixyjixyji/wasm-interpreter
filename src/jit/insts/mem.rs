@@ -10,19 +10,20 @@ use monoasm::*;
 use monoasm_macro::monoasm;
 
 impl X86JitCompiler {
-    pub(crate) fn compile_local_get(
+    pub(crate) fn emit_local_get(
         &mut self,
         dst: Register,
         local_idx: u32,
         local_types: &[ValueType],
     ) {
         let ty = local_types[local_idx as usize];
+        let offset = local_idx * 8;
         match ty {
             ValueType::I32 => {
                 monoasm!(
                     &mut self.jit,
                     movq R(REG_TEMP.as_index()), R(REG_LOCAL_BASE.as_index()); // reg_temp = reg_local_base
-                    movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index()) + ((local_idx * 8) as u32)];
+                    movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index()) + (offset)];
                 );
                 mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
             }
@@ -30,43 +31,44 @@ impl X86JitCompiler {
                 monoasm!(
                     &mut self.jit,
                     movq R(REG_TEMP.as_index()), R(REG_LOCAL_BASE.as_index()); // reg_temp = reg_local_base
-                    movq xmm(REG_TEMP_FP.as_index()), [R(REG_TEMP.as_index()) + ((local_idx * 8) as u32)];
+                    movq xmm(REG_TEMP_FP.as_index()), [R(REG_TEMP.as_index()) + (offset)];
                 );
                 mov_reg_to_reg(&mut self.jit, dst, Register::FpReg(REG_TEMP_FP));
             }
         }
     }
 
-    pub(crate) fn compile_local_set(
+    pub(crate) fn emit_local_set(
         &mut self,
         value: Register,
         local_idx: u32,
         local_types: &[ValueType],
     ) {
         let ty = local_types[local_idx as usize];
+        let offset = local_idx * 8;
         match ty {
             ValueType::I32 => {
                 mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), value);
                 monoasm!(
                     &mut self.jit,
-                    movq [R(REG_LOCAL_BASE.as_index()) + ((local_idx * 8) as u32)], R(REG_TEMP2.as_index());
+                    movq [R(REG_LOCAL_BASE.as_index()) + (offset)], R(REG_TEMP2.as_index());
                 );
             }
             ValueType::F64 => {
                 mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), value);
                 monoasm!(
                     &mut self.jit,
-                    movsd [R(REG_LOCAL_BASE.as_index()) + ((local_idx * 8) as u32)], xmm(REG_TEMP_FP.as_index());
+                    movsd [R(REG_LOCAL_BASE.as_index()) + (offset)], xmm(REG_TEMP_FP.as_index());
                 );
             }
         }
     }
 
-    pub(crate) fn compile_memory_grow(&mut self, npages: Register) {
+    pub(crate) fn emit_memory_grow(&mut self, npages: Register) {
         self.linear_mem.grow(&mut self.jit, npages);
     }
 
-    pub(crate) fn compile_load(&mut self, dst: Register, base: Register, offset: u32, width: u32) {
+    pub(crate) fn emit_load_mem(&mut self, dst: Register, base: Register, offset: u32, width: u32) {
         self.get_effective_address(REG_TEMP, base, offset); // REG_TEMP stores the effective address
 
         // 2. load the result into dst
@@ -102,7 +104,7 @@ impl X86JitCompiler {
         mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
     }
 
-    pub(crate) fn compile_store(
+    pub(crate) fn emit_store_mem(
         &mut self,
         base: Register,
         offset: u32,

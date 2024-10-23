@@ -12,7 +12,7 @@ use crate::{
 };
 
 impl X86JitCompiler {
-    pub(crate) fn compile_call(&mut self, callee_func: &FuncDecl, callee: DestLabel) {
+    pub(crate) fn emit_call(&mut self, callee_func: &FuncDecl, callee: DestLabel) {
         // save caller-saved registers
         let caller_saved_regs = self.reg_allocator.get_used_caller_saved_registers();
 
@@ -80,7 +80,7 @@ impl X86JitCompiler {
     /// compile the select instruction
     /// select cond, a, b
     /// if cond != 0, then set a to the result, otherwise set b
-    pub(crate) fn compile_select(
+    pub(crate) fn emit_select(
         &mut self,
         dst: RegWithType,
         cond: RegWithType,

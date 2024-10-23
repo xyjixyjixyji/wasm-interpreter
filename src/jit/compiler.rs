@@ -105,7 +105,7 @@ impl X86JitCompiler {
         func_to_label: &HashMap<usize, DestLabel>,
     ) -> Result<()> {
         let func_index = module.borrow().get_func_index(fdecl).unwrap();
-        let func_begin_label = func_to_label.get(&func_index).unwrap().clone();
+        let func_begin_label = *func_to_label.get(&func_index).unwrap();
         self.reg_allocator.reset();
 
         // start compilation
@@ -126,7 +126,7 @@ impl X86JitCompiler {
 
         self.emit_asm(
             Rc::clone(&module),
-            &fdecl.get_insts(),
+            fdecl.get_insts(),
             &local_types,
             func_to_label,
         )?;

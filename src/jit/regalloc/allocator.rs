@@ -62,8 +62,8 @@ impl X86RegisterAllocator {
 
     pub fn next_not_caller_saved(&mut self) -> RegWithType {
         let mut pool: Vec<_> = ALLOC_POOL
-            .to_vec()
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|r| !Register::Reg(*r).is_caller_saved())
             .filter(|r| !self.reg_vec.iter().any(|rt| rt.reg == Register::Reg(*r)))
             .collect();
@@ -133,7 +133,6 @@ impl X86RegisterAllocator {
 
     fn next_spill(&mut self) -> Register {
         self.stack_offset += 8;
-        let reg = Register::Stack(self.stack_offset);
-        reg
+        Register::Stack(self.stack_offset)
     }
 }

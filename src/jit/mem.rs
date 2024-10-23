@@ -38,8 +38,7 @@ impl JitLinearMemory {
             movq R(REG_MEMORY_BASE.as_index()), rax;
         );
 
-        let npages = (initial_mem_size_in_byte + WASM_DEFAULT_PAGE_SIZE_BYTE as u64 - 1)
-            / WASM_DEFAULT_PAGE_SIZE_BYTE as u64;
+        let npages = initial_mem_size_in_byte.div_ceil(WASM_DEFAULT_PAGE_SIZE_BYTE as u64);
 
         monoasm!(
             &mut *jit,

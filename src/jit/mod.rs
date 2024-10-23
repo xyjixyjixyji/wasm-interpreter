@@ -3,8 +3,6 @@ use std::rc::Rc;
 use anyhow::Result;
 use debug_cell::RefCell;
 use monoasm::*;
-use monoasm_macro::monoasm;
-use regalloc::{Register, REG_TEMP};
 
 use crate::module::{value_type::WasmValue, wasm_module::WasmModule};
 
@@ -35,4 +33,3 @@ pub trait WasmJitCompiler {
         main_params: Vec<WasmValue>,
     ) -> Result<CodePtr>;
 }
-

@@ -14,7 +14,7 @@ use monoasm_macro::monoasm;
 
 impl X86JitCompiler {
     // jit compile *a = a op b*
-    pub(crate) fn compile_f64_binop(&mut self, binop: &F64Binop) {
+    pub(crate) fn emit_f64_binop(&mut self, binop: &F64Binop) {
         let b = self.reg_allocator.pop().reg;
         let a = self.reg_allocator.pop().reg;
 
@@ -45,7 +45,7 @@ impl X86JitCompiler {
         self.reg_allocator.push(RegWithType::new(a, ValueType::F64));
     }
 
-    pub(crate) fn compile_i32_binop(&mut self, binop: &I32Binop) {
+    pub(crate) fn emit_i32_binop(&mut self, binop: &I32Binop) {
         let b = self.reg_allocator.pop();
         let a = self.reg_allocator.pop();
 

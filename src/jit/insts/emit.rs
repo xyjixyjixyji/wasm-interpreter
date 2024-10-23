@@ -47,7 +47,7 @@ impl X86JitCompiler {
                     let callee_func = module.borrow().get_func(*func_idx).unwrap().clone();
 
                     // compile the call instruction
-                    self.compile_call(&callee_func, *label);
+                    self.emit_call(&callee_func, *label);
                 }
                 Instruction::CallIndirect {
                     type_index,
@@ -60,16 +60,16 @@ impl X86JitCompiler {
                     let cond = self.reg_allocator.pop();
                     let b = self.reg_allocator.pop();
                     let a = self.reg_allocator.pop();
-                    self.compile_select(a, cond, b, a);
+                    self.emit_select(a, cond, b, a);
                     self.reg_allocator.push(a);
                 }
                 Instruction::LocalGet { local_idx } => {
                     let dst = self.reg_allocator.next().reg;
-                    self.compile_local_get(dst, *local_idx, &local_types);
+                    self.emit_local_get(dst, *local_idx, local_types);
                 }
                 Instruction::LocalSet { local_idx } => {
                     let value = self.reg_allocator.pop();
-                    self.compile_local_set(value.reg, *local_idx, &local_types);
+                    self.emit_local_set(value.reg, *local_idx, local_types);
                 }
                 Instruction::LocalTee { local_idx } => todo!(),
                 Instruction::GlobalGet { global_idx } => todo!(),
@@ -78,13 +78,13 @@ impl X86JitCompiler {
                     let base = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
-                    self.compile_load(dst, base.reg, offset, 4);
+                    self.emit_load_mem(dst, base.reg, offset, 4);
                 }
                 Instruction::F64Load { memarg } => {
                     let base = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
-                    self.compile_load(dst, base.reg, offset, 8);
+                    self.emit_load_mem(dst, base.reg, offset, 8);
                 }
                 Instruction::I32Load8S { memarg } => todo!(),
                 Instruction::I32Load8U { memarg } => todo!(),
@@ -94,25 +94,25 @@ impl X86JitCompiler {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store(base.reg, offset, value.reg, 4);
+                    self.emit_store_mem(base.reg, offset, value.reg, 4);
                 }
                 Instruction::F64Store { memarg } => {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store(base.reg, offset, value.reg, 8);
+                    self.emit_store_mem(base.reg, offset, value.reg, 8);
                 }
                 Instruction::I32Store8 { memarg } => {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store(base.reg, offset, value.reg, 1);
+                    self.emit_store_mem(base.reg, offset, value.reg, 1);
                 }
                 Instruction::I32Store16 { memarg } => {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let base = self.reg_allocator.pop();
-                    self.compile_store(base.reg, offset, value.reg, 2);
+                    self.emit_store_mem(base.reg, offset, value.reg, 2);
                 }
                 Instruction::MemorySize { mem } => {
                     if *mem != 0 {
@@ -133,7 +133,7 @@ impl X86JitCompiler {
                     self.linear_mem
                         .read_memory_size_in_page(&mut self.jit, old_mem_size.reg);
 
-                    self.compile_memory_grow(additional_pages.reg);
+                    self.emit_memory_grow(additional_pages.reg);
                 }
                 Instruction::F64Const { value } => {
                     let reg = self.reg_allocator.next_xmm();
@@ -141,11 +141,11 @@ impl X86JitCompiler {
                 }
                 Instruction::I32Unop(_) => todo!(),
                 Instruction::I32Binop(binop) => {
-                    self.compile_i32_binop(binop);
+                    self.emit_i32_binop(binop);
                 }
                 Instruction::F64Unop(_) => todo!(),
                 Instruction::F64Binop(binop) => {
-                    self.compile_f64_binop(binop);
+                    self.emit_f64_binop(binop);
                 }
             }
         }
