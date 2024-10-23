@@ -5,8 +5,8 @@ use wasmparser::ValType;
 use crate::{
     jit::{
         mov_reg_to_reg,
-        regalloc::{Register, X64Register, REG_TEMP},
-        X86JitCompiler,
+        regalloc::{RegWithType, Register, X64Register, REG_TEMP},
+        ValueType, X86JitCompiler,
     },
     module::components::FuncDecl,
 };
@@ -82,12 +82,30 @@ impl X86JitCompiler {
     /// if cond != 0, then set a to the result, otherwise set b
     pub(crate) fn compile_select(
         &mut self,
-        dst: Register,
-        cond: Register,
-        a: Register,
-        b: Register,
+        dst: RegWithType,
+        cond: RegWithType,
+        a: RegWithType,
+        b: RegWithType,
     ) {
-        todo!()
+        let cond_is_zero = self.jit.label();
+        let end_label = self.jit.label();
+        mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), cond.reg);
+        monoasm!(
+            &mut self.jit,
+            cmpq R(REG_TEMP.as_index()), 0;
+            je cond_is_zero;
+        );
+        mov_reg_to_reg(&mut self.jit, dst.reg, a.reg); // cond != 0, set a
+        monoasm!(
+            &mut self.jit,
+            jmp end_label;
+        cond_is_zero: // cond == 0, set b
+        );
+        mov_reg_to_reg(&mut self.jit, dst.reg, b.reg);
+        monoasm!(
+            &mut self.jit,
+        end_label:
+        );
     }
 
     fn setup_function_call_arguments(&mut self, callee_func: &FuncDecl) {

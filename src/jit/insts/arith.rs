@@ -2,7 +2,7 @@ use crate::{
     jit::{
         mov_reg_to_reg,
         regalloc::{
-            RegType, Register, X64Register, REG_TEMP, REG_TEMP2, REG_TEMP_FP, REG_TEMP_FP2,
+            RegWithType, Register, X64Register, REG_TEMP, REG_TEMP2, REG_TEMP_FP, REG_TEMP_FP2,
         },
         ValueType, X86JitCompiler,
     },
@@ -42,7 +42,7 @@ impl X86JitCompiler {
         }
 
         mov_reg_to_reg(&mut self.jit, a, Register::FpReg(REG_TEMP_FP));
-        self.reg_allocator.push(RegType::new(a, ValueType::F64));
+        self.reg_allocator.push(RegWithType::new(a, ValueType::F64));
     }
 
     pub(crate) fn compile_i32_binop(&mut self, binop: &I32Binop) {

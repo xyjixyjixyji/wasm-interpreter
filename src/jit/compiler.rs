@@ -136,7 +136,8 @@ impl X86JitCompiler {
                     let cond = self.reg_allocator.pop();
                     let b = self.reg_allocator.pop();
                     let a = self.reg_allocator.pop();
-                    todo!()
+                    self.compile_select(a, cond, b, a);
+                    self.reg_allocator.push(a);
                 }
                 Instruction::LocalGet { local_idx } => {
                     let dst = self.reg_allocator.next().reg;

@@ -9,12 +9,12 @@ use crate::jit::ValueType;
 use super::register::{Register, ALLOC_POOL, FP_ALLOC_POOL};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct RegType {
+pub struct RegWithType {
     pub(crate) reg: Register,
     pub(crate) ty: ValueType,
 }
 
-impl RegType {
+impl RegWithType {
     pub fn new(reg: Register, ty: ValueType) -> Self {
         Self { reg, ty }
     }
@@ -24,7 +24,7 @@ impl RegType {
 pub struct X86RegisterAllocator {
     // Register vector, which is the currently used registers, representing
     // values staying on the wasm operand stack.
-    reg_vec: Vec<RegType>,
+    reg_vec: Vec<RegWithType>,
     // Stack offset for the current function frame, used for spilled variables.
     // Note that we always spills 64-bit value.
     stack_offset: usize,
@@ -49,18 +49,18 @@ impl X86RegisterAllocator {
     }
 
     /// Get the stack top, which is the last element of the register vector.
-    pub fn top(&self) -> RegType {
+    pub fn top(&self) -> RegWithType {
         *self.reg_vec.last().expect("no register")
     }
 
     /// Allocate a position to hold the value.
-    pub fn next(&mut self) -> RegType {
+    pub fn next(&mut self) -> RegWithType {
         let reg = self.next_reg();
-        self.reg_vec.push(RegType::new(reg, ValueType::I32));
-        RegType::new(reg, ValueType::I32)
+        self.reg_vec.push(RegWithType::new(reg, ValueType::I32));
+        RegWithType::new(reg, ValueType::I32)
     }
 
-    pub fn next_not_caller_saved(&mut self) -> RegType {
+    pub fn next_not_caller_saved(&mut self) -> RegWithType {
         let mut pool: Vec<_> = ALLOC_POOL
             .to_vec()
             .into_iter()
@@ -74,22 +74,22 @@ impl X86RegisterAllocator {
             Register::Reg(pool.pop().unwrap())
         };
 
-        self.reg_vec.push(RegType::new(reg, ValueType::I32));
+        self.reg_vec.push(RegWithType::new(reg, ValueType::I32));
 
-        RegType::new(reg, ValueType::I32)
+        RegWithType::new(reg, ValueType::I32)
     }
 
-    pub fn next_xmm(&mut self) -> RegType {
+    pub fn next_xmm(&mut self) -> RegWithType {
         let reg = self.next_xmm_reg();
-        self.reg_vec.push(RegType::new(reg, ValueType::F64));
-        RegType::new(reg, ValueType::F64)
+        self.reg_vec.push(RegWithType::new(reg, ValueType::F64));
+        RegWithType::new(reg, ValueType::F64)
     }
 
     /// Allocate a position to spill the value. Used for wasm local.
-    pub fn new_spill(&mut self, ty: ValueType) -> RegType {
+    pub fn new_spill(&mut self, ty: ValueType) -> RegWithType {
         let reg = self.next_spill();
-        self.reg_vec.push(RegType::new(reg, ty));
-        RegType::new(reg, ty)
+        self.reg_vec.push(RegWithType::new(reg, ty));
+        RegWithType::new(reg, ty)
     }
 
     pub fn get_used_caller_saved_registers(&self) -> Vec<Register> {
@@ -100,11 +100,11 @@ impl X86RegisterAllocator {
             .collect()
     }
 
-    pub fn push(&mut self, rt: RegType) {
+    pub fn push(&mut self, rt: RegWithType) {
         self.reg_vec.push(rt);
     }
 
-    pub fn pop(&mut self) -> RegType {
+    pub fn pop(&mut self) -> RegWithType {
         self.reg_vec.pop().expect("no register to drop")
     }
 }
