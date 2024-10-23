@@ -12,6 +12,10 @@ use crate::{
 };
 
 impl X86JitCompiler {
+    /// compile the call_indirect instruction
+    /// we get the callee label and emit the call instruction sequence
+    pub(crate) fn emit_call_indirect(&mut self, type_index: u32, table_index: u32) {}
+
     pub(crate) fn emit_call(&mut self, callee_func: &FuncDecl, callee: DestLabel) {
         // save caller-saved registers
         let caller_saved_regs = self.reg_allocator.get_used_caller_saved_registers();

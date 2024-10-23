@@ -28,12 +28,19 @@ pub struct X86JitCompiler {
     /// Linear memory
     pub(crate) linear_mem: JitLinearMemory,
 
-    // table stores functions or expressions
+    /// table stores functions or expressions
+    ///
+    /// we store the table_len separately to get the table size to make sure
+    /// the table index is valid on call_indirect, when it is uninitialized,
+    /// we trap
     pub(crate) tables: Vec<Vec<u32>>,
+    pub(crate) table_len: Vec<usize>,
 
-    // global variables, we separate the type from the value to get a more
-    // consistent memory layout so that we can get the global's value in asm
-    // more easily
+    /// global variables
+    ///
+    /// we separate the type from the value to get a more
+    /// consistent memory layout so that we can get the global's value in asm
+    /// more easily
     pub(crate) globals: Vec<u64>,
     pub(crate) global_types: Vec<ValueType>, // used statically for type checking
 
@@ -51,6 +58,7 @@ impl X86JitCompiler {
             jit,
             linear_mem: JitLinearMemory::new(),
             tables: vec![],
+            table_len: vec![],
             globals: vec![],
             global_types: vec![],
             trap_label,

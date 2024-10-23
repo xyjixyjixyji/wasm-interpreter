@@ -24,6 +24,7 @@ impl X86JitCompiler {
             // make sure the vector is long enough
             while self.tables.len() < n_tables {
                 self.tables.push(Vec::new());
+                self.table_len.push(0);
             }
 
             // setup the elements in the table
@@ -36,6 +37,8 @@ impl X86JitCompiler {
                 }
                 _ => panic!("we dont support expressions element segment"),
             }
+
+            self.table_len[ind as usize] = self.tables[ind as usize].len();
         }
     }
 }
