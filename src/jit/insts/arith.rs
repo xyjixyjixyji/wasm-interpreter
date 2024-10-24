@@ -1,7 +1,7 @@
 use crate::{
     jit::{
         regalloc::{
-            RegWithType, Register, X64Register, REG_TEMP, REG_TEMP2, REG_TEMP_FP, REG_TEMP_FP2,
+            RegWithType, Register, X86Register, REG_TEMP, REG_TEMP2, REG_TEMP_FP, REG_TEMP_FP2,
         },
         utils::emit_mov_reg_to_reg,
         ValueType, X86JitCompiler,
@@ -161,18 +161,18 @@ impl X86JitCompiler<'_> {
                     jz trap_label;
 
                     // overflow check
-                    pushq R(X64Register::Rax.as_index());
-                    pushq R(X64Register::Rdx.as_index());
-                    movq R(X64Register::Rax.as_index()), (0xFFFFFFFF80000000);
-                    cmpq R(REG_TEMP.as_index()), R(X64Register::Rax.as_index());
+                    pushq R(X86Register::Rax.as_index());
+                    pushq R(X86Register::Rdx.as_index());
+                    movq R(X86Register::Rax.as_index()), (0xFFFFFFFF80000000);
+                    cmpq R(REG_TEMP.as_index()), R(X86Register::Rax.as_index());
                     jne ok_label;
-                    movq R(X64Register::Rax.as_index()), (0xFFFFFFFFFFFFFFFF);
-                    cmpq R(REG_TEMP2.as_index()), R(X64Register::Rax.as_index());
+                    movq R(X86Register::Rax.as_index()), (0xFFFFFFFFFFFFFFFF);
+                    cmpq R(REG_TEMP2.as_index()), R(X86Register::Rax.as_index());
                     jne ok_label;
                     jmp trap_label;
 
                 ok_label:
-                    movq R(X64Register::Rax.as_index()), R(REG_TEMP.as_index());
+                    movq R(X86Register::Rax.as_index()), R(REG_TEMP.as_index());
                     cqo; // RDX:RAX
                     idiv R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
                 );
@@ -180,19 +180,19 @@ impl X86JitCompiler<'_> {
                     emit_mov_reg_to_reg(
                         &mut self.jit,
                         Register::Reg(REG_TEMP),
-                        Register::Reg(X64Register::Rax),
+                        Register::Reg(X86Register::Rax),
                     );
                 } else {
                     emit_mov_reg_to_reg(
                         &mut self.jit,
                         Register::Reg(REG_TEMP),
-                        Register::Reg(X64Register::Rdx),
+                        Register::Reg(X86Register::Rdx),
                     );
                 }
                 monoasm!(
                     &mut self.jit,
-                    popq R(X64Register::Rdx.as_index());
-                    popq R(X64Register::Rax.as_index());
+                    popq R(X86Register::Rdx.as_index());
+                    popq R(X86Register::Rax.as_index());
                 );
             }
             I32Binop::DivU | I32Binop::RemU => {
@@ -205,14 +205,14 @@ impl X86JitCompiler<'_> {
                     jz trap_label;
 
                 ok_label:
-                    pushq R(X64Register::Rax.as_index());
-                    pushq R(X64Register::Rdx.as_index());
+                    pushq R(X86Register::Rax.as_index());
+                    pushq R(X86Register::Rdx.as_index());
 
                     // Clear RDX (for unsigned division, RDX should be 0)
-                    xorq R(X64Register::Rdx.as_index()), R(X64Register::Rdx.as_index());
+                    xorq R(X86Register::Rdx.as_index()), R(X86Register::Rdx.as_index());
 
                     // Move dividend into RAX
-                    movq R(X64Register::Rax.as_index()), R(REG_TEMP.as_index());
+                    movq R(X86Register::Rax.as_index()), R(REG_TEMP.as_index());
 
                     // Perform the unsigned division
                     div R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
@@ -221,19 +221,19 @@ impl X86JitCompiler<'_> {
                     emit_mov_reg_to_reg(
                         &mut self.jit,
                         Register::Reg(REG_TEMP),
-                        Register::Reg(X64Register::Rax),
+                        Register::Reg(X86Register::Rax),
                     );
                 } else {
                     emit_mov_reg_to_reg(
                         &mut self.jit,
                         Register::Reg(REG_TEMP),
-                        Register::Reg(X64Register::Rdx),
+                        Register::Reg(X86Register::Rdx),
                     );
                 }
                 monoasm!(
                     &mut self.jit,
-                    popq R(X64Register::Rdx.as_index());
-                    popq R(X64Register::Rax.as_index());
+                    popq R(X86Register::Rdx.as_index());
+                    popq R(X86Register::Rax.as_index());
                 );
             }
             I32Binop::And => {

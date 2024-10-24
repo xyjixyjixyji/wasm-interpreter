@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use super::regalloc::{Register, X64Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_TEMP};
+use super::regalloc::{Register, X86Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_TEMP};
 use super::{JitLinearMemory, ValueType, WasmJitCompiler};
 use crate::jit::regalloc::REG_TEMP_FP;
 use crate::jit::utils::emit_mov_reg_to_reg;
@@ -158,16 +158,15 @@ impl X86JitCompiler<'_> {
             func_begin_label:
         );
         self.prologue(stack_size);
+
         let local_types = self.setup_locals(fdecl);
-
         self.emit_asm(fdecl.get_insts(), &local_types)?;
-
         // return...
         let stack_top = self.reg_allocator.top();
         if let Some(stack_top) = stack_top {
             emit_mov_reg_to_reg(
                 &mut self.jit,
-                Register::Reg(X64Register::Rax),
+                Register::Reg(X86Register::Rax),
                 stack_top.reg,
             );
         }

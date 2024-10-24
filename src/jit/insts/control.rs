@@ -4,7 +4,7 @@ use wasmparser::ValType;
 
 use crate::{
     jit::{
-        regalloc::{RegWithType, Register, X64Register, REG_TEMP, REG_TEMP2},
+        regalloc::{RegWithType, Register, X86Register, REG_TEMP, REG_TEMP2},
         utils::emit_mov_reg_to_reg,
         X86JitCompiler,
     },
@@ -65,7 +65,7 @@ impl X86JitCompiler<'_> {
         self.emit_call(REG_TEMP, nr_args);
     }
 
-    pub(crate) fn emit_call(&mut self, callee_index: X64Register, nr_args: usize) {
+    pub(crate) fn emit_call(&mut self, callee_index: X86Register, nr_args: usize) {
         emit_mov_reg_to_reg(
             &mut self.jit,
             Register::Reg(REG_TEMP),
@@ -109,7 +109,7 @@ impl X86JitCompiler<'_> {
         // note that we don't want the return value to be in caller-saved registers
         // because we will pop them later in the call sequence
         let ret = self.reg_allocator.next_not_caller_saved();
-        emit_mov_reg_to_reg(&mut self.jit, ret.reg, Register::Reg(X64Register::Rax));
+        emit_mov_reg_to_reg(&mut self.jit, ret.reg, Register::Reg(X86Register::Rax));
 
         // restore the stack spaced we used.....
         let restore_size = (std::cmp::max(6, nr_args) - 6) * 8;

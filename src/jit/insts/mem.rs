@@ -1,6 +1,6 @@
 use crate::jit::{
     regalloc::{
-        Register, X64Register, REG_LOCAL_BASE, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2, REG_TEMP_FP,
+        Register, X86Register, REG_LOCAL_BASE, REG_MEMORY_BASE, REG_TEMP, REG_TEMP2, REG_TEMP_FP,
     },
     utils::emit_mov_reg_to_reg,
     ValueType, X86JitCompiler,
@@ -155,7 +155,7 @@ impl X86JitCompiler<'_> {
     }
 
     /// REG_TEMP will store the effective address + width
-    fn get_effective_address(&mut self, dst: X64Register, base: Register, offset: u32) {
+    fn get_effective_address(&mut self, dst: X86Register, base: Register, offset: u32) {
         emit_mov_reg_to_reg(&mut self.jit, Register::Reg(dst), base); // <-- reg_temp2 = base
         monoasm!(
             &mut self.jit,
