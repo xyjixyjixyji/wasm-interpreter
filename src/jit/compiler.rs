@@ -1,12 +1,11 @@
 use std::rc::Rc;
 
 use super::insts::WasmJitControlFlowFrame;
-use super::regalloc::{Register, X86Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_TEMP};
+use super::regalloc::{Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_TEMP};
 use super::{JitLinearMemory, ValueType, WasmJitCompiler};
 use crate::jit::regalloc::REG_TEMP_FP;
 use crate::jit::utils::emit_mov_reg_to_reg;
 use crate::module::components::FuncDecl;
-use crate::module::insts::Instruction;
 use crate::module::value_type::WasmValue;
 use crate::module::wasm_module::WasmModule;
 use crate::vm::WASM_DEFAULT_PAGE_SIZE_BYTE;
@@ -69,6 +68,7 @@ impl<'a> X86JitCompiler<'a> {
         let mut jit = JitMemory::new();
         let trap_label = jit.label();
 
+        // get some statically known information
         let module = Rc::clone(&module);
         let nglobals = module.borrow().get_globals().len();
         let global_types: Vec<ValueType> = module
@@ -97,6 +97,7 @@ impl<'a> X86JitCompiler<'a> {
             .map(|_| jit.label())
             .collect::<Vec<_>>();
 
+        // we precalculate the static size here to avoid reallocation
         Self {
             module,
             reg_allocator: X86RegisterAllocator::new(),
@@ -158,7 +159,7 @@ impl X86JitCompiler<'_> {
     fn setup_runtime(&mut self, main_params: Vec<WasmValue>) -> DestLabel {
         self.setup_trap_entry();
         self.setup_tables();
-        // TODO: setup globals
+        self.setup_globals().expect("setup globals failed");
 
         let module = Rc::clone(&self.module);
         let main_label = self
@@ -168,7 +169,7 @@ impl X86JitCompiler<'_> {
         let initial_mem_size_in_byte = module
             .borrow()
             .get_memory()
-            .and_then(|m| Some(m.initial as usize * WASM_DEFAULT_PAGE_SIZE_BYTE))
+            .map(|m| m.initial as usize * WASM_DEFAULT_PAGE_SIZE_BYTE)
             .unwrap_or(0) as u64;
         self.setup_vm_entry(*main_label, initial_mem_size_in_byte, main_params)
     }
