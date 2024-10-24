@@ -1,15 +1,25 @@
 use monoasm::*;
 use monoasm_macro::monoasm;
-use wasmparser::ValType;
 
-use crate::{
-    jit::{
-        regalloc::{RegWithType, Register, X86Register, REG_TEMP, REG_TEMP2},
-        utils::emit_mov_reg_to_reg,
-        X86JitCompiler,
-    },
-    module::components::FuncDecl,
+use crate::jit::{
+    regalloc::{RegWithType, Register, X86Register, REG_TEMP, REG_TEMP2},
+    utils::emit_mov_reg_to_reg,
+    X86JitCompiler,
 };
+
+pub(crate) enum WasmJitControlFlowType {
+    Block,
+    If { else_label: Option<DestLabel> },
+    Loop,
+}
+
+pub(crate) struct WasmJitControlFlowFrame {
+    pub(super) control_type: WasmJitControlFlowType,
+    pub(super) expected_stack_height: usize,
+    pub(super) num_results: usize,
+    pub(super) start_label: DestLabel,
+    pub(super) end_label: DestLabel,
+}
 
 impl X86JitCompiler<'_> {
     /// compile the call_indirect instruction

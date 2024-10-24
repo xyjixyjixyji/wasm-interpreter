@@ -1,6 +1,6 @@
 use crate::{
     jit::{
-        regalloc::{Register, REG_TEMP},
+        regalloc::{Register, X86Register, REG_TEMP},
         utils::emit_mov_reg_to_reg,
         ValueType, X86JitCompiler,
     },
@@ -157,7 +157,20 @@ impl X86JitCompiler<'_> {
             }
         }
 
+        self.mov_stack_top_return_reg();
+
         Ok(())
+    }
+
+    fn mov_stack_top_return_reg(&mut self) {
+        let stack_top = self.reg_allocator.top();
+        if let Some(stack_top) = stack_top {
+            emit_mov_reg_to_reg(
+                &mut self.jit,
+                Register::Reg(X86Register::Rax),
+                stack_top.reg,
+            );
+        }
     }
 
     fn emit_trap(&mut self) {
