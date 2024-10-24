@@ -210,6 +210,8 @@ impl X86JitCompiler<'_> {
         self.linear_mem
             .init_size(&mut self.jit, initial_mem_size_in_byte);
 
+        self.setup_data().expect("setup data segment failed");
+
         // setup main params
         for (i, param) in main_params.iter().enumerate() {
             if i < 6 {
