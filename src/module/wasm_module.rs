@@ -132,6 +132,10 @@ impl<'a> WasmModule<'a> {
         self.sigs.get(index as usize)
     }
 
+    pub fn get_sig_index(&self, sig: &FuncType) -> Option<usize> {
+        self.sigs.iter().position(|s| s == sig)
+    }
+
     pub fn get_imports(&self) -> &ImportSet<'a> {
         &self.imports
     }
@@ -150,6 +154,10 @@ impl<'a> WasmModule<'a> {
 
     pub fn get_func_index(&self, func: &FuncDecl) -> Option<usize> {
         self.funcs.iter().position(|f| f == func)
+    }
+
+    pub fn get_tables(&self) -> &Vec<Table<'a>> {
+        &self.tables
     }
 
     pub fn get_data_count(&self) -> Option<u32> {

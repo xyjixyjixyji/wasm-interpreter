@@ -51,6 +51,8 @@ pub struct X86JitCompiler<'a> {
 
     /// function labels
     pub(crate) func_labels: Vec<DestLabel>,
+    pub(crate) func_addrs: Vec<u64>,       // after relocation
+    pub(crate) func_sig_indices: Vec<u32>, // for call_indirect dynamic type checking
 }
 
 impl<'a> X86JitCompiler<'a> {
@@ -58,17 +60,41 @@ impl<'a> X86JitCompiler<'a> {
         let mut jit = JitMemory::new();
         let trap_label = jit.label();
 
+        let module = Rc::clone(&module);
+        let nglobals = module.borrow().get_globals().len();
+        let global_types: Vec<ValueType> = module
+            .borrow()
+            .get_globals()
+            .iter()
+            .map(|g| g.get_ty().content_type)
+            .map(|ty| match ty {
+                ValType::I32 => ValueType::I32,
+                ValType::F64 => ValueType::F64,
+                _ => unreachable!(),
+            })
+            .collect();
+        let ntables = module.borrow().get_tables().len();
+        let nfuncs = module.borrow().get_funcs().len();
+        let func_sig_indices: Vec<u32> = module
+            .borrow()
+            .get_funcs()
+            .iter()
+            .map(|f| module.borrow().get_sig_index(f.get_sig()).unwrap() as u32)
+            .collect();
+
         let mut compiler = Self {
             module,
             reg_allocator: X86RegisterAllocator::new(),
             jit,
             linear_mem: JitLinearMemory::new(),
-            tables: vec![],
-            table_len: vec![],
-            globals: vec![],
-            global_types: vec![],
+            tables: vec![vec![]; ntables],
+            table_len: vec![0; ntables],
+            globals: vec![0; nglobals],
+            global_types,
             trap_label,
             func_labels: vec![],
+            func_addrs: vec![0; nfuncs],
+            func_sig_indices,
         };
 
         compiler.setup_trap_entry();
@@ -77,7 +103,7 @@ impl<'a> X86JitCompiler<'a> {
     }
 }
 
-impl<'a> WasmJitCompiler for X86JitCompiler<'a> {
+impl WasmJitCompiler for X86JitCompiler<'_> {
     fn compile(
         &mut self,
         initial_mem_size_in_byte: u64,
@@ -90,6 +116,9 @@ impl<'a> WasmJitCompiler for X86JitCompiler<'a> {
             .iter()
             .map(|_| self.jit.label())
             .collect();
+
+        // TODO: setup globals
+        self.setup_tables();
 
         // setup vm_entry
         let main_index = self.module.borrow().get_main_index().unwrap();
@@ -104,6 +133,9 @@ impl<'a> WasmJitCompiler for X86JitCompiler<'a> {
         }
 
         self.jit.finalize();
+        for (i, label) in self.func_labels.iter().enumerate() {
+            self.func_addrs[i] = self.jit.get_label_u64(*label);
+        }
 
         // return vm_entry address for initial execution
         let codeptr = self.jit.get_label_u64(vm_entry_label);
@@ -116,7 +148,7 @@ impl<'a> WasmJitCompiler for X86JitCompiler<'a> {
 impl X86JitCompiler<'_> {
     fn compile_func(&mut self, fdecl: &FuncDecl) -> Result<()> {
         let func_index = self.module.borrow().get_func_index(fdecl).unwrap();
-        let func_begin_label = *self.func_labels.get(func_index as usize).unwrap();
+        let func_begin_label = *self.func_labels.get(func_index).unwrap();
         let stack_size = self.get_stack_size_in_byte(fdecl);
         self.reg_allocator.reset();
 
@@ -127,9 +159,6 @@ impl X86JitCompiler<'_> {
         );
         self.prologue(stack_size);
         let local_types = self.setup_locals(fdecl);
-        self.setup_tables();
-
-        // TODO: setup globals
 
         self.emit_asm(fdecl.get_insts(), &local_types)?;
 
@@ -185,13 +214,12 @@ impl X86JitCompiler<'_> {
         // setup main params
         for (i, param) in main_params.iter().enumerate() {
             if i < 6 {
+                let reg = Register::from_ith_argument(i as u32);
                 match param {
                     WasmValue::I32(v) => {
-                        let reg = Register::from_ith_argument(i as u32, false);
                         self.emit_mov_i32_to_reg(*v, reg);
                     }
                     WasmValue::F64(v) => {
-                        let reg = Register::from_ith_argument(i as u32, true);
                         self.emit_mov_f64_to_reg(*v, reg);
                     }
                 }
@@ -245,21 +273,12 @@ impl X86JitCompiler<'_> {
             }
 
             if i < 6 {
+                emit_mov_reg_to_reg(&mut self.jit, r.reg, Register::from_ith_argument(i as u32));
                 match params {
                     ValType::I32 => {
-                        emit_mov_reg_to_reg(
-                            &mut self.jit,
-                            r.reg,
-                            Register::from_ith_argument(i as u32, false),
-                        );
                         local_types.push(ValueType::I32);
                     }
                     ValType::F64 => {
-                        emit_mov_reg_to_reg(
-                            &mut self.jit,
-                            r.reg,
-                            Register::from_ith_argument(i as u32, true),
-                        );
                         local_types.push(ValueType::F64);
                     }
                     _ => unreachable!(),
@@ -276,7 +295,11 @@ impl X86JitCompiler<'_> {
                         local_types.push(ValueType::I32);
                     }
                     ValType::F64 => {
-                        todo!();
+                        monoasm!(
+                            &mut self.jit,
+                            movsd xmm(REG_TEMP_FP.as_index()), [rbp + ((i as i32 - 6) * 8 + 8)];
+                        );
+                        emit_mov_reg_to_reg(&mut self.jit, r.reg, Register::FpReg(REG_TEMP_FP));
                         local_types.push(ValueType::F64);
                     }
                     _ => unreachable!(),

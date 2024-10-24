@@ -149,27 +149,15 @@ impl Register {
         }
     }
 
-    pub fn from_ith_argument(i: u32, is_fp: bool) -> Register {
-        if is_fp {
-            match i {
-                0 => Register::FpReg(X86FpRegister::Xmm0),
-                1 => Register::FpReg(X86FpRegister::Xmm1),
-                2 => Register::FpReg(X86FpRegister::Xmm2),
-                3 => Register::FpReg(X86FpRegister::Xmm3),
-                4 => Register::FpReg(X86FpRegister::Xmm4),
-                5 => Register::FpReg(X86FpRegister::Xmm5),
-                _ => panic!("invalid argument index: {}", i),
-            }
-        } else {
-            match i {
-                0 => Register::Reg(X64Register::Rdi),
-                1 => Register::Reg(X64Register::Rsi),
-                2 => Register::Reg(X64Register::Rdx),
-                3 => Register::Reg(X64Register::Rcx),
-                4 => Register::Reg(X64Register::R8),
-                5 => Register::Reg(X64Register::R9),
-                _ => panic!("invalid argument index: {}", i),
-            }
+    pub fn from_ith_argument(i: u32) -> Register {
+        match i {
+            0 => Register::Reg(X64Register::Rdi),
+            1 => Register::Reg(X64Register::Rsi),
+            2 => Register::Reg(X64Register::Rdx),
+            3 => Register::Reg(X64Register::Rcx),
+            4 => Register::Reg(X64Register::R8),
+            5 => Register::Reg(X64Register::R9),
+            _ => panic!("invalid argument index: {}", i),
         }
     }
 }

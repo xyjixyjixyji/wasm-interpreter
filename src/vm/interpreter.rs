@@ -76,7 +76,7 @@ impl WasmInterpreter<'_> {
                 let f: ReturnFunc = unsafe { std::mem::transmute(vm_entry) };
                 // If you want to step over......
                 // unsafe {
-                //     std::intrinsics::breakpoint();
+                // std::intrinsics::breakpoint();
                 // }
                 WasmValue::I32(f() as i32).to_string()
             }

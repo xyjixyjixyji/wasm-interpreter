@@ -1,5 +1,9 @@
 use crate::{
-    jit::{ValueType, X86JitCompiler},
+    jit::{
+        regalloc::{Register, REG_TEMP},
+        utils::emit_mov_reg_to_reg,
+        ValueType, X86JitCompiler,
+    },
     module::insts::Instruction,
 };
 
@@ -37,7 +41,16 @@ impl X86JitCompiler<'_> {
                     );
                 }
                 Instruction::Call { func_idx } => {
-                    self.emit_call(*func_idx);
+                    let nargs = self
+                        .module
+                        .borrow()
+                        .get_sig(*func_idx)
+                        .unwrap()
+                        .params()
+                        .len();
+                    self.emit_mov_i32_to_reg(*func_idx as i32, Register::Reg(REG_TEMP));
+                    log::debug!("call func_idx: {}", *func_idx as i32);
+                    self.emit_call(REG_TEMP, nargs);
                 }
                 Instruction::CallIndirect {
                     type_index,
