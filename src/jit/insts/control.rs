@@ -14,11 +14,11 @@ pub(crate) enum WasmJitControlFlowType {
 }
 
 pub(crate) struct WasmJitControlFlowFrame {
-    pub(super) control_type: WasmJitControlFlowType,
-    pub(super) expected_stack_height: usize,
-    pub(super) num_results: usize,
-    pub(super) start_label: DestLabel,
-    pub(super) end_label: DestLabel,
+    pub(crate) control_type: WasmJitControlFlowType,
+    pub(crate) expected_stack_height: usize,
+    pub(crate) num_results: usize,
+    pub(crate) start_label: DestLabel,
+    pub(crate) end_label: DestLabel,
 }
 
 impl X86JitCompiler<'_> {

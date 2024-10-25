@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use super::insts::WasmJitControlFlowFrame;
+use super::insts::{WasmJitControlFlowFrame, WasmJitControlFlowType};
 use super::regalloc::{Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_TEMP};
 use super::{JitLinearMemory, ValueType, WasmJitCompiler};
 use crate::jit::regalloc::REG_TEMP_FP;
@@ -132,24 +132,24 @@ impl WasmJitCompiler for X86JitCompiler<'_> {
 impl X86JitCompiler<'_> {
     fn compile_func(&mut self, fdecl: &FuncDecl) -> Result<()> {
         let func_index = self.module.borrow().get_func_index(fdecl).unwrap();
-        let func_begin_label = *self.func_labels.get(func_index).unwrap();
+        let func_start = *self.func_labels.get(func_index).unwrap();
+        let func_end = self.jit.label();
         let stack_size = self.get_stack_size_in_byte(fdecl);
 
         // reset per function state
         self.reg_allocator.reset();
         self.control_flow_stack.clear();
+        self.push_initial_control_frame(fdecl, func_start, func_end);
 
         // start compilation
-        self.prologue(func_begin_label, stack_size);
+        self.prologue(func_start, stack_size);
 
         let local_types = self.setup_locals(fdecl);
         self.emit_asm(fdecl.get_insts(), &local_types)?;
 
         self.epilogue(stack_size);
-        monoasm!(
-            &mut self.jit,
-            ret;
-        );
+
+        self.emit_function_return(func_end);
 
         Ok(())
     }
@@ -161,6 +161,7 @@ impl X86JitCompiler<'_> {
         self.setup_tables();
         self.setup_globals().expect("setup globals failed");
 
+        // setup vm entry, the entry point of the whole program
         let module = Rc::clone(&self.module);
         let main_label = self
             .func_labels
@@ -263,6 +264,21 @@ impl X86JitCompiler<'_> {
         );
 
         vm_entry_label
+    }
+
+    fn push_initial_control_frame(
+        &mut self,
+        fdecl: &FuncDecl,
+        start_label: DestLabel,
+        end_label: DestLabel,
+    ) {
+        self.control_flow_stack.push(WasmJitControlFlowFrame {
+            control_type: WasmJitControlFlowType::Block,
+            expected_stack_height: 0,
+            num_results: fdecl.get_sig().results().len(),
+            start_label,
+            end_label,
+        });
     }
 
     fn setup_locals(&mut self, fdecl: &FuncDecl) -> Vec<ValueType> {

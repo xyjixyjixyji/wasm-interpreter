@@ -8,6 +8,7 @@ use crate::{
 };
 
 use anyhow::{anyhow, Result};
+use monoasm::DestLabel;
 use monoasm_macro::monoasm;
 
 impl X86JitCompiler<'_> {
@@ -157,12 +158,22 @@ impl X86JitCompiler<'_> {
             }
         }
 
-        self.mov_stack_top_return_reg();
-
         Ok(())
     }
 
-    fn mov_stack_top_return_reg(&mut self) {
+    pub(crate) fn emit_function_return(&mut self, end_label: DestLabel) {
+        monoasm!(
+            &mut self.jit,
+            end_label:
+        );
+        self.emit_mov_stack_top_return_reg();
+        monoasm!(
+            &mut self.jit,
+            ret;
+        );
+    }
+
+    fn emit_mov_stack_top_return_reg(&mut self) {
         let stack_top = self.reg_allocator.top();
         if let Some(stack_top) = stack_top {
             emit_mov_reg_to_reg(
