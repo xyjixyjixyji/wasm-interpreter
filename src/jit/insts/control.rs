@@ -63,6 +63,8 @@ impl X86JitCompiler<'_> {
             &mut self.jit,
             cmpq R(REG_TEMP2.as_index()), (table_size);
             jge trap_label;
+            cmpq R(REG_TEMP2.as_index()), 0;
+            js trap_label; // negative index
         );
 
         // dynamic type checking for signature match
