@@ -437,8 +437,8 @@ impl X86JitCompiler<'_> {
             self.emit_single_label(end_label);
         }
 
-        self.epilogue(stack_size);
         self.emit_mov_stack_top_return_reg();
+        self.epilogue(stack_size);
         monoasm!(
             &mut self.jit,
             ret;
