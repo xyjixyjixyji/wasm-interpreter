@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
 use super::insts::{WasmJitControlFlowFrame, WasmJitControlFlowType};
@@ -7,6 +7,7 @@ use super::{JitLinearMemory, ValueType, WasmJitCompiler};
 use crate::jit::regalloc::REG_TEMP_FP;
 use crate::jit::utils::emit_mov_reg_to_reg;
 use crate::module::components::FuncDecl;
+use crate::module::insts::Instruction;
 use crate::module::value_type::WasmValue;
 use crate::module::wasm_module::WasmModule;
 use crate::vm::WASM_DEFAULT_PAGE_SIZE_BYTE;
@@ -32,6 +33,20 @@ pub struct X86JitCompiler<'a> {
     ///
     /// TODO: refactor this to be per function code generator
     pub(crate) control_flow_stack: VecDeque<WasmJitControlFlowFrame>,
+
+    /// The branch table non-default target labels, for each br_table instruction,
+    /// we store the non-default target labels in a vector
+    ///
+    /// key: func_index
+    /// value: a vector of br_table instructions' non-default target labels
+    pub(crate) brtable_nondefault_target_labels: HashMap<usize, Vec<Vec<DestLabel>>>,
+    /// The branch table targets, for each br_table instruction, we store the
+    /// target's address in a vector, so that we can access this memory after
+    /// the jit relocation
+    ///
+    /// key: func_index
+    /// value: a vector of br_table instructions' target addresses
+    pub(crate) brtable_nondefault_target_addrs: HashMap<usize, Vec<Vec<u64>>>,
 
     /// In memory assembler
     pub(crate) jit: JitMemory,
@@ -98,12 +113,13 @@ impl<'a> X86JitCompiler<'a> {
             .map(|_| jit.label())
             .collect::<Vec<_>>();
 
-        // we precalculate the static size here to avoid reallocation
-        Self {
+        let mut compiler = Self {
             module,
             reg_allocator: X86RegisterAllocator::new(),
             control_flow_stack: VecDeque::new(),
             jit,
+            brtable_nondefault_target_labels: HashMap::new(),
+            brtable_nondefault_target_addrs: HashMap::new(),
             linear_mem: JitLinearMemory::new(),
             tables: vec![vec![]; ntables],
             table_len: vec![0; ntables],
@@ -113,7 +129,12 @@ impl<'a> X86JitCompiler<'a> {
             func_labels,
             func_addrs: vec![0; nfuncs], // setup after compilation
             func_sig_indices,
-        }
+        };
+
+        compiler.set_brtable_nondefault_target_labels();
+        compiler.presize_brtable_nondefault_target_addrs();
+
+        compiler
     }
 }
 
@@ -146,7 +167,12 @@ impl X86JitCompiler<'_> {
         self.prologue(func_start, stack_size);
 
         let local_types = self.setup_locals(fdecl);
-        self.emit_asm(fdecl.get_insts(), &local_types, stack_size)?;
+        self.emit_asm(
+            func_index as u32,
+            fdecl.get_insts(),
+            &local_types,
+            stack_size,
+        )?;
 
         // emit return, epilogue embedded
         self.emit_function_return(Some(func_end), stack_size);
@@ -186,8 +212,21 @@ impl X86JitCompiler<'_> {
 
     fn finalize(&mut self, vm_entry_label: DestLabel) -> u64 {
         self.jit.finalize();
+
+        // fill in the relocated addresses after jit relocation
         for (i, label) in self.func_labels.iter().enumerate() {
             self.func_addrs[i] = self.jit.get_label_u64(*label);
+        }
+        for (func_index, nondefault_target_labels) in self.brtable_nondefault_target_labels.iter() {
+            let nondefault_target_addrs_ref = self
+                .brtable_nondefault_target_addrs
+                .get_mut(func_index)
+                .unwrap();
+            for (ith_table, labels) in nondefault_target_labels.iter().enumerate() {
+                for (i, label) in labels.iter().enumerate() {
+                    nondefault_target_addrs_ref[ith_table][i] = self.jit.get_label_u64(*label);
+                }
+            }
         }
 
         // return vm_entry address for initial execution
@@ -404,5 +443,37 @@ impl X86JitCompiler<'_> {
             &mut self.jit,
             ret;
         );
+    }
+
+    fn set_brtable_nondefault_target_labels(&mut self) {
+        let mut brtable_nondefault_target_labels = HashMap::new();
+        for (i, fdecl) in self.module.borrow().get_funcs().iter().enumerate() {
+            let mut nondefault_target_labels = Vec::new();
+            for inst in fdecl.get_insts() {
+                if let Instruction::BrTable { table } = inst {
+                    let mut nondefault_targets = Vec::new();
+                    for _ in 0..table.targets.len() {
+                        nondefault_targets.push(self.jit.label());
+                    }
+                    nondefault_target_labels.push(nondefault_targets);
+                }
+            }
+            brtable_nondefault_target_labels.insert(i, nondefault_target_labels);
+        }
+        self.brtable_nondefault_target_labels = brtable_nondefault_target_labels;
+    }
+
+    /// setup the correct size for the brtable_nondefault_target_addrs so there
+    /// will be no reallocation during the execution
+    fn presize_brtable_nondefault_target_addrs(&mut self) {
+        let mut brtable_nondefault_target_addrs = HashMap::new();
+        for (func_index, nondefault_target_labels) in self.brtable_nondefault_target_labels.iter() {
+            let mut nondefault_target_addrs = vec![vec![]; nondefault_target_labels.len()];
+            for i in 0..nondefault_target_labels.len() {
+                nondefault_target_addrs[i] = vec![0; nondefault_target_labels[i].len()];
+            }
+            brtable_nondefault_target_addrs.insert(*func_index, nondefault_target_addrs);
+        }
+        self.brtable_nondefault_target_addrs = brtable_nondefault_target_addrs;
     }
 }

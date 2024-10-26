@@ -10,6 +10,7 @@ use crate::{
         utils::emit_mov_reg_to_reg,
         X86JitCompiler,
     },
+    module::insts::BrTable,
     vm::{block_type_num_results, stack_height_delta},
 };
 
@@ -206,16 +207,58 @@ impl X86JitCompiler<'_> {
         self.emit_single_label(block_begin);
     }
 
+    pub(crate) fn emit_br_table(
+        &mut self,
+        index: Register,
+        table: &BrTable,
+        which_func: u32,
+        which_table: usize,
+    ) {
+        let table_size = table.targets.len();
+        let default_target_label = self.jit.label();
+        let target_labels =
+            self.brtable_nondefault_target_labels[&(which_func as usize)][which_table].clone();
+
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), index);
+        monoasm!(
+            &mut self.jit,
+            cmpq R(REG_TEMP.as_index()), 0;
+            js default_target_label; // negative index
+            cmpq R(REG_TEMP.as_index()), (table_size);
+            jae default_target_label; // out of bound index
+        );
+
+        // now we are jumping to actual target inside the table
+        // width = 8 because we are storing u64
+        let target_addrs_ptr =
+            self.brtable_nondefault_target_addrs[&(which_func as usize)][which_table].as_ptr();
+        monoasm!(
+            &mut self.jit,
+            movq R(REG_TEMP2.as_index()), (target_addrs_ptr);
+            jmp [R(REG_TEMP2.as_index()) + R(REG_TEMP.as_index()) * 8];
+        );
+
+        // construct jump table
+        for (i, target) in table.targets.iter().enumerate() {
+            let target_label = target_labels[i];
+            self.emit_single_label(target_label);
+            self.emit_br(*target);
+        }
+
+        self.emit_single_label(default_target_label);
+        self.emit_br(table.default_target);
+    }
+
     pub(crate) fn emit_br_if(&mut self, cond: Register, rel_depth: u32) {
-        let dont_br_label = self.jit.label();
+        let skip_br = self.jit.label();
         emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), cond);
         monoasm!(
             &mut self.jit,
             cmpq R(REG_TEMP.as_index()), 0;
-            jz dont_br_label;
+            jz skip_br;
         );
         self.emit_br(rel_depth);
-        self.emit_single_label(dont_br_label);
+        self.emit_single_label(skip_br);
     }
 
     pub(crate) fn emit_br(&mut self, rel_depth: u32) {

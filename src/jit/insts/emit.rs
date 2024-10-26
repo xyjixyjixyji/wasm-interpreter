@@ -14,11 +14,13 @@ use monoasm::DestLabel;
 impl X86JitCompiler<'_> {
     pub(crate) fn emit_asm(
         &mut self,
+        func_index: u32,
         insts: &[Instruction],
         local_types: &[ValueType],
         stack_size: u64,
     ) -> Result<()> {
         let end_labels = self.pregen_labals_for_ends(insts);
+        let mut nbrtable = 0;
         for (i, inst) in insts.iter().enumerate() {
             match inst {
                 Instruction::I32Const { value } => {
@@ -51,7 +53,11 @@ impl X86JitCompiler<'_> {
                     let cond = self.reg_allocator.pop();
                     self.emit_br_if(cond.reg, *rel_depth);
                 }
-                Instruction::BrTable { table } => todo!(),
+                Instruction::BrTable { table } => {
+                    let index = self.reg_allocator.pop();
+                    self.emit_br_table(index.reg, table, func_index, nbrtable);
+                    nbrtable += 1;
+                }
                 Instruction::Return => {
                     self.emit_function_return(None, stack_size);
                 }
