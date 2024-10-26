@@ -65,8 +65,9 @@ impl X86JitCompiler<'_> {
                     let nargs = self
                         .module
                         .borrow()
-                        .get_sig(*func_idx)
+                        .get_func(*func_idx)
                         .unwrap()
+                        .get_sig()
                         .params()
                         .len();
                     self.emit_mov_i32_to_reg(*func_idx as i32, Register::Reg(REG_TEMP));
