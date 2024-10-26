@@ -206,6 +206,18 @@ impl X86JitCompiler<'_> {
         self.emit_single_label(block_begin);
     }
 
+    pub(crate) fn emit_br_if(&mut self, cond: Register, rel_depth: u32) {
+        let dont_br_label = self.jit.label();
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), cond);
+        monoasm!(
+            &mut self.jit,
+            cmpq R(REG_TEMP.as_index()), 0;
+            jz dont_br_label;
+        );
+        self.emit_br(rel_depth);
+        self.emit_single_label(dont_br_label);
+    }
+
     pub(crate) fn emit_br(&mut self, rel_depth: u32) {
         let target_depth = rel_depth as usize;
         let stack_depth = self.control_flow_stack.len();

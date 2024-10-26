@@ -47,7 +47,10 @@ impl X86JitCompiler<'_> {
                 Instruction::Br { rel_depth } => {
                     self.emit_br(*rel_depth);
                 }
-                Instruction::BrIf { rel_depth } => todo!(),
+                Instruction::BrIf { rel_depth } => {
+                    let cond = self.reg_allocator.pop();
+                    self.emit_br_if(cond.reg, *rel_depth);
+                }
                 Instruction::BrTable { table } => todo!(),
                 Instruction::Return => {
                     self.emit_function_return(None, stack_size);
