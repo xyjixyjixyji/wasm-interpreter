@@ -1,8 +1,18 @@
 # Wasm Interpreter
 
 This is a course project for CMU 17770, Virtual Machines and Managed Runtimes.
-This codebase contains code for a Wasm Interpreter in pure Rust, the internal
-data type only suppoers i32, f64 and opaque types(Refs). It also only supports
-limited number of instructions, but mainly major ones.
 
-Moreover, Passive elements are not supported and custom section is not implemented.
+This codebase contains code for a Wasm Interpreter in pure Rust, the internal
+data type only supports i32, f64 (so no opaque types for other types in Wasm
+GC). It also only supports limited number of instructions, but mainly major
+ones, it is complete, but maybe less efficient if some certain instructions
+are more handy. Also, passive elements are not supported and custom section is
+not implemented.
+
+It also includes a very simple single pass jit compiler, which compiles the
+entire module once into amd64 assembly code and then execute the code. The
+assembly code is not well optimized, so be careful.
+
+## Side note on writing a jit compiler
+
+todo
