@@ -830,12 +830,12 @@ impl WasmFunctionExecutorImpl<'_> {
     // control flow functions
     fn run_block(&mut self, insts: &[Instruction], block_type: BlockType) -> Result<()> {
         let mut expected_stack_height = self.operand_stack.len();
-        expected_stack_height += self.stack_height_delta(block_type);
+        expected_stack_height += stack_height_delta(self.module.clone(), block_type);
 
         let frame = BlockControlFlowFrame {
             control_type: BlockControlFlowType::Block,
             expected_stack_height,
-            num_results: self.num_results(block_type),
+            num_results: block_type_num_results(self.module.clone(), block_type),
             start_pc: self.pc,
             end_pc: Self::find_matching_end(insts, self.pc)?,
         };
@@ -847,12 +847,12 @@ impl WasmFunctionExecutorImpl<'_> {
 
     fn run_loop(&mut self, insts: &[Instruction], block_type: BlockType) -> Result<()> {
         let mut expected_stack_height = self.operand_stack.len();
-        expected_stack_height += self.stack_height_delta(block_type);
+        expected_stack_height += stack_height_delta(self.module.clone(), block_type);
 
         let frame = BlockControlFlowFrame {
             control_type: BlockControlFlowType::Loop,
             expected_stack_height,
-            num_results: self.num_results(block_type),
+            num_results: block_type_num_results(self.module.clone(), block_type),
             start_pc: self.pc,
             end_pc: Self::find_matching_end(insts, self.pc)?,
         };
@@ -865,7 +865,7 @@ impl WasmFunctionExecutorImpl<'_> {
     /// Run the if instruction, return true if the condition is met, false otherwise
     fn run_if(&mut self, insts: &[Instruction], block_type: BlockType) -> Result<()> {
         let mut expected_stack_height = self.operand_stack.len();
-        expected_stack_height += self.stack_height_delta(block_type);
+        expected_stack_height += stack_height_delta(self.module.clone(), block_type);
 
         let cond = self.pop_operand_stack().as_i32();
         let else_pc = Self::find_closest_else(insts, self.pc);
@@ -875,7 +875,7 @@ impl WasmFunctionExecutorImpl<'_> {
                 condition_met: cond != 0,
             },
             expected_stack_height,
-            num_results: self.num_results(block_type),
+            num_results: block_type_num_results(self.module.clone(), block_type),
             start_pc: self.pc,
             end_pc: Self::find_matching_end(insts, self.pc)?,
         };
@@ -1077,30 +1077,35 @@ impl WasmFunctionExecutorImpl<'_> {
             }
         }
     }
+}
 
-    fn stack_height_delta(&self, block_type: BlockType) -> usize {
-        match block_type {
-            BlockType::Empty => 0,
-            BlockType::Type(_) => 1,
-            BlockType::FuncType(f) => {
-                let module = self.module.borrow();
-                let func = module.get_func(f).expect("function not found");
-                let nparams = func.get_sig().params().len();
-                let nresults = func.get_sig().results().len();
-                nresults - nparams
-            }
-        }
+pub(crate) fn block_type_num_results(
+    module: Rc<RefCell<WasmModule>>,
+    block_type: BlockType,
+) -> usize {
+    match block_type {
+        BlockType::Empty => 0,
+        BlockType::Type(_) => 1,
+        BlockType::FuncType(f) => module
+            .borrow()
+            .get_func(f)
+            .expect("function not found")
+            .get_sig()
+            .results()
+            .len(),
     }
+}
 
-    fn num_results(&self, block_type: BlockType) -> usize {
-        match block_type {
-            BlockType::Empty => 0,
-            BlockType::Type(_) => 1,
-            BlockType::FuncType(f) => {
-                let module = self.module.borrow();
-                let func = module.get_func(f).expect("function not found");
-                func.get_sig().results().len()
-            }
+pub(crate) fn stack_height_delta(module: Rc<RefCell<WasmModule>>, block_type: BlockType) -> usize {
+    match block_type {
+        BlockType::Empty => 0,
+        BlockType::Type(_) => 1,
+        BlockType::FuncType(f) => {
+            let module = module.borrow();
+            let func = module.get_func(f).expect("function not found");
+            let nparams = func.get_sig().params().len();
+            let nresults = func.get_sig().results().len();
+            nresults - nparams
         }
     }
 }

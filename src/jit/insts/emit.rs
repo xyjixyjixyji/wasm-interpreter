@@ -1,7 +1,8 @@
+use std::collections::HashMap;
+
 use crate::{
     jit::{
-        regalloc::{Register, X86Register, REG_TEMP},
-        utils::emit_mov_reg_to_reg,
+        regalloc::{Register, REG_TEMP},
         ValueType, X86JitCompiler,
     },
     module::insts::Instruction,
@@ -9,15 +10,16 @@ use crate::{
 
 use anyhow::{anyhow, Result};
 use monoasm::DestLabel;
-use monoasm_macro::monoasm;
 
 impl X86JitCompiler<'_> {
     pub(crate) fn emit_asm(
         &mut self,
         insts: &[Instruction],
         local_types: &[ValueType],
+        stack_size: u64,
     ) -> Result<()> {
-        for inst in insts {
+        let end_labels = self.pregen_labals_for_ends(insts);
+        for (i, inst) in insts.iter().enumerate() {
             match inst {
                 Instruction::I32Const { value } => {
                     let reg = self.reg_allocator.next();
@@ -27,19 +29,28 @@ impl X86JitCompiler<'_> {
                     self.emit_trap();
                 }
                 Instruction::Nop => {}
-                Instruction::Block { ty } => todo!(),
+                Instruction::Block { ty } => {
+                    let block_begin = self.jit.label();
+                    let block_end = *end_labels
+                        .get(&Self::find_matching_end_index(insts, i))
+                        .expect("an matching end is needed");
+
+                    self.emit_block(ty, block_begin, block_end);
+                }
                 Instruction::Loop { ty } => todo!(),
                 Instruction::If { ty } => todo!(),
                 Instruction::Else => todo!(),
-                Instruction::End => {}
-                Instruction::Br { rel_depth } => todo!(),
+                Instruction::End => {
+                    self.control_flow_stack.pop_back();
+                    self.emit_single_label(*end_labels.get(&i).unwrap());
+                }
+                Instruction::Br { rel_depth } => {
+                    self.emit_br(*rel_depth);
+                }
                 Instruction::BrIf { rel_depth } => todo!(),
                 Instruction::BrTable { table } => todo!(),
                 Instruction::Return => {
-                    monoasm!(
-                        &mut self.jit,
-                        ret;
-                    );
+                    self.emit_function_return(None, stack_size);
                 }
                 Instruction::Call { func_idx } => {
                     let nargs = self
@@ -50,7 +61,6 @@ impl X86JitCompiler<'_> {
                         .params()
                         .len();
                     self.emit_mov_i32_to_reg(*func_idx as i32, Register::Reg(REG_TEMP));
-                    log::debug!("call func_idx: {}", *func_idx as i32);
                     self.emit_call(REG_TEMP, nargs);
                 }
                 Instruction::CallIndirect {
@@ -161,34 +171,38 @@ impl X86JitCompiler<'_> {
         Ok(())
     }
 
-    pub(crate) fn emit_function_return(&mut self, end_label: DestLabel) {
-        monoasm!(
-            &mut self.jit,
-            end_label:
-        );
-        self.emit_mov_stack_top_return_reg();
-        monoasm!(
-            &mut self.jit,
-            ret;
-        );
+    fn pregen_labals_for_ends(&mut self, insts: &[Instruction]) -> HashMap<usize, DestLabel> {
+        let mut end_labals = HashMap::new();
+        for (i, inst) in insts.iter().enumerate() {
+            if let Instruction::End = inst {
+                end_labals.insert(i, self.jit.label());
+            }
+        }
+        end_labals
     }
 
-    fn emit_mov_stack_top_return_reg(&mut self) {
-        let stack_top = self.reg_allocator.top();
-        if let Some(stack_top) = stack_top {
-            emit_mov_reg_to_reg(
-                &mut self.jit,
-                Register::Reg(X86Register::Rax),
-                stack_top.reg,
-            );
+    fn find_matching_end_index(insts: &[Instruction], start: usize) -> usize {
+        let mut depth = 0;
+        for (i, inst) in insts.iter().enumerate() {
+            if i < start {
+                continue;
+            }
+
+            if Instruction::is_control_block_start(inst) {
+                depth += 1;
+            } else if Instruction::is_control_block_end(inst) {
+                depth -= 1;
+            }
+
+            if depth == 0 {
+                return i;
+            }
         }
+
+        panic!("no matching end found");
     }
 
     fn emit_trap(&mut self) {
-        let trap_label = self.trap_label;
-        monoasm!(
-            &mut self.jit,
-            jmp trap_label;
-        );
+        self.emit_jmp(self.trap_label);
     }
 }

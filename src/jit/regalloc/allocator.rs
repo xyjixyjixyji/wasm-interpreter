@@ -48,9 +48,25 @@ impl X86RegisterAllocator {
         self.reg_vec.clear();
     }
 
+    pub fn get_vec(&self) -> &Vec<RegWithType> {
+        &self.reg_vec
+    }
+
     /// Get the stack top, which is the last element of the register vector.
     pub fn top(&self) -> Option<RegWithType> {
         self.reg_vec.last().copied()
+    }
+
+    pub fn size(&self) -> usize {
+        self.reg_vec.len()
+    }
+
+    pub fn push(&mut self, rt: RegWithType) {
+        self.reg_vec.push(rt);
+    }
+
+    pub fn pop(&mut self) -> RegWithType {
+        self.reg_vec.pop().expect("no register to drop")
     }
 
     /// Allocate a position to hold the value.
@@ -98,14 +114,6 @@ impl X86RegisterAllocator {
             .map(|rt| rt.reg)
             .filter(|r| r.is_caller_saved())
             .collect()
-    }
-
-    pub fn push(&mut self, rt: RegWithType) {
-        self.reg_vec.push(rt);
-    }
-
-    pub fn pop(&mut self) -> RegWithType {
-        self.reg_vec.pop().expect("no register to drop")
     }
 }
 

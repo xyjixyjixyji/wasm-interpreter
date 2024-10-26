@@ -1,7 +1,8 @@
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use super::insts::{WasmJitControlFlowFrame, WasmJitControlFlowType};
-use super::regalloc::{Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_TEMP};
+use super::regalloc::{Register, X86Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_TEMP};
 use super::{JitLinearMemory, ValueType, WasmJitCompiler};
 use crate::jit::regalloc::REG_TEMP_FP;
 use crate::jit::utils::emit_mov_reg_to_reg;
@@ -30,7 +31,7 @@ pub struct X86JitCompiler<'a> {
     /// the control flow stack for branching
     ///
     /// TODO: refactor this to be per function code generator
-    pub(crate) control_flow_stack: Vec<WasmJitControlFlowFrame>,
+    pub(crate) control_flow_stack: VecDeque<WasmJitControlFlowFrame>,
 
     /// In memory assembler
     pub(crate) jit: JitMemory,
@@ -101,7 +102,7 @@ impl<'a> X86JitCompiler<'a> {
         Self {
             module,
             reg_allocator: X86RegisterAllocator::new(),
-            control_flow_stack: vec![],
+            control_flow_stack: VecDeque::new(),
             jit,
             linear_mem: JitLinearMemory::new(),
             tables: vec![vec![]; ntables],
@@ -145,11 +146,10 @@ impl X86JitCompiler<'_> {
         self.prologue(func_start, stack_size);
 
         let local_types = self.setup_locals(fdecl);
-        self.emit_asm(fdecl.get_insts(), &local_types)?;
+        self.emit_asm(fdecl.get_insts(), &local_types, stack_size)?;
 
-        self.epilogue(stack_size);
-
-        self.emit_function_return(func_end);
+        // emit return, epilogue embedded
+        self.emit_function_return(Some(func_end), stack_size);
 
         Ok(())
     }
@@ -258,10 +258,7 @@ impl X86JitCompiler<'_> {
         }
 
         // jump to main
-        monoasm!(
-            &mut self.jit,
-            jmp main_label;
-        );
+        self.emit_jmp(main_label);
 
         vm_entry_label
     }
@@ -272,9 +269,10 @@ impl X86JitCompiler<'_> {
         start_label: DestLabel,
         end_label: DestLabel,
     ) {
-        self.control_flow_stack.push(WasmJitControlFlowFrame {
+        self.control_flow_stack.push_back(WasmJitControlFlowFrame {
             control_type: WasmJitControlFlowType::Block,
             expected_stack_height: 0,
+            entry_regvec_snapshot: self.reg_allocator.get_vec().clone(),
             num_results: fdecl.get_sig().results().len(),
             start_label,
             end_label,
@@ -381,6 +379,30 @@ impl X86JitCompiler<'_> {
             popq rbx;
             addq rsp, (stack_size);
             popq rbp;
+        );
+    }
+
+    fn emit_mov_stack_top_return_reg(&mut self) {
+        let stack_top = self.reg_allocator.top();
+        if let Some(stack_top) = stack_top {
+            emit_mov_reg_to_reg(
+                &mut self.jit,
+                Register::Reg(X86Register::Rax),
+                stack_top.reg,
+            );
+        }
+    }
+
+    pub(crate) fn emit_function_return(&mut self, end_label: Option<DestLabel>, stack_size: u64) {
+        if let Some(end_label) = end_label {
+            self.emit_single_label(end_label);
+        }
+
+        self.epilogue(stack_size);
+        self.emit_mov_stack_top_return_reg();
+        monoasm!(
+            &mut self.jit,
+            ret;
         );
     }
 }

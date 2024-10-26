@@ -6,6 +6,7 @@ mod interpreter;
 pub use interpreter::WasmInterpreter;
 
 mod func_exec;
+pub(crate) use func_exec::{block_type_num_results, stack_height_delta};
 
 pub const WASM_DEFAULT_PAGE_SIZE_BYTE: usize = 65536;
 

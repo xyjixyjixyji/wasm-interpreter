@@ -1,21 +1,30 @@
+use std::collections::VecDeque;
+
 use monoasm::*;
 use monoasm_macro::monoasm;
+use wasmparser::BlockType;
 
-use crate::jit::{
-    regalloc::{RegWithType, Register, X86Register, REG_TEMP, REG_TEMP2},
-    utils::emit_mov_reg_to_reg,
-    X86JitCompiler,
+use crate::{
+    jit::{
+        regalloc::{RegWithType, Register, X86Register, REG_TEMP, REG_TEMP2},
+        utils::emit_mov_reg_to_reg,
+        X86JitCompiler,
+    },
+    vm::{block_type_num_results, stack_height_delta},
 };
 
+#[derive(Debug, Clone)]
 pub(crate) enum WasmJitControlFlowType {
     Block,
     If { else_label: Option<DestLabel> },
     Loop,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct WasmJitControlFlowFrame {
     pub(crate) control_type: WasmJitControlFlowType,
     pub(crate) expected_stack_height: usize,
+    pub(crate) entry_regvec_snapshot: Vec<RegWithType>,
     pub(crate) num_results: usize,
     pub(crate) start_label: DestLabel,
     pub(crate) end_label: DestLabel,
@@ -174,10 +183,80 @@ impl X86JitCompiler<'_> {
         cond_is_zero: // cond == 0, set b
         );
         emit_mov_reg_to_reg(&mut self.jit, dst.reg, b.reg);
+        self.emit_single_label(end_label);
+    }
+
+    pub(crate) fn emit_block(
+        &mut self,
+        ty: &BlockType,
+        block_begin: DestLabel,
+        block_end: DestLabel,
+    ) {
+        let expected_stack_size =
+            self.reg_allocator.size() + stack_height_delta(self.module.clone(), *ty);
+        self.control_flow_stack.push_back(WasmJitControlFlowFrame {
+            control_type: WasmJitControlFlowType::Block,
+            expected_stack_height: expected_stack_size,
+            entry_regvec_snapshot: self.reg_allocator.get_vec().clone(),
+            num_results: block_type_num_results(self.module.clone(), *ty),
+            start_label: block_begin,
+            end_label: block_end,
+        });
+
+        self.emit_single_label(block_begin);
+    }
+
+    pub(crate) fn emit_br(&mut self, rel_depth: u32) {
+        let target_depth = rel_depth as usize;
+        let stack_depth = self.control_flow_stack.len();
+
+        if target_depth >= stack_depth {
+            panic!("invalid branch target depth");
+        }
+
+        let target_frame = self.control_flow_stack[stack_depth - target_depth - 1].clone();
+        self.unwind_stack(target_frame.expected_stack_height, target_frame.num_results);
+
+        match target_frame.control_type {
+            WasmJitControlFlowType::Block => {
+                // we dont need to truncate the stack here, because the jit code
+                // is not actually run during codegen
+                self.emit_jmp(target_frame.end_label);
+            }
+            WasmJitControlFlowType::If { .. } => todo!(),
+            WasmJitControlFlowType::Loop => todo!(),
+        }
+    }
+
+    pub(crate) fn emit_single_label(&mut self, label: DestLabel) {
         monoasm!(
             &mut self.jit,
-        end_label:
+            label:
         );
+    }
+
+    pub(crate) fn emit_jmp(&mut self, dst: DestLabel) {
+        monoasm!(
+            &mut self.jit,
+            jmp dst;
+        );
+    }
+}
+
+impl X86JitCompiler<'_> {
+    fn unwind_stack(&mut self, expected_stack_height: usize, num_results: usize) {
+        let mut result_buf = VecDeque::new();
+        for _ in 0..num_results {
+            result_buf.push_back(self.reg_allocator.pop());
+        }
+
+        while self.reg_allocator.size() > expected_stack_height.saturating_sub(num_results) {
+            self.reg_allocator.pop();
+        }
+
+        for _ in 0..num_results {
+            self.reg_allocator.push(result_buf.pop_back().unwrap());
+        }
     }
 
     fn setup_function_call_arguments(&mut self, nr_args: usize) {
