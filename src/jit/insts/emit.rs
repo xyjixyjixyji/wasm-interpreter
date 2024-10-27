@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use crate::{
     jit::{
@@ -20,6 +20,7 @@ impl X86JitCompiler<'_> {
         stack_size: u64,
     ) -> Result<()> {
         let end_labels = self.pregen_labals_for_ends(insts);
+        let else_labels = self.pregen_labels_for_else(insts);
         let mut nbrtable = 0;
         for (i, inst) in insts.iter().enumerate() {
             match inst {
@@ -37,13 +38,34 @@ impl X86JitCompiler<'_> {
                         .get(&Self::find_matching_end_index(insts, i))
                         .expect("an matching end is needed");
 
-                    self.emit_block(ty, block_begin, block_end);
+                    self.emit_block(*ty, block_begin, block_end);
                 }
                 Instruction::Loop { ty } => todo!(),
-                Instruction::If { ty } => todo!(),
-                Instruction::Else => todo!(),
+                Instruction::If { ty } => {
+                    let else_ind = Self::find_closest_else_index(insts, i);
+                    let else_label = else_ind.map(|ind| else_labels[&ind]);
+                    let end_ind = Self::find_matching_end_index(insts, i);
+                    let end_label = *end_labels.get(&end_ind).unwrap();
+
+                    let cond = self.reg_allocator.pop();
+                    self.emit_if(cond.reg, *ty, else_label, end_label);
+                }
+                Instruction::Else => {
+                    let frame = self.control_flow_stack.back().unwrap();
+                    let regalloc_snapshot = frame.entry_regalloc_snapshot.clone();
+                    let end_label = frame.end_label;
+
+                    self.emit_jmp(end_label);
+                    self.emit_single_label(*else_labels.get(&i).unwrap());
+
+                    // reset the register allocator to the snapshot in the else block
+                    // to maintain a consistent view of the stack
+                    self.reg_allocator = regalloc_snapshot;
+                }
                 Instruction::End => {
-                    self.control_flow_stack.pop_back();
+                    let frame = self.control_flow_stack.pop_back().unwrap();
+                    // unwind the stack, so only the results are in the top of the stack
+                    self.unwind_stack(frame.expected_stack_height, frame.num_results);
                     self.emit_single_label(*end_labels.get(&i).unwrap());
                 }
                 Instruction::Br { rel_depth } => {
@@ -191,6 +213,34 @@ impl X86JitCompiler<'_> {
         end_labals
     }
 
+    fn pregen_labels_for_else(&mut self, insts: &[Instruction]) -> HashMap<usize, DestLabel> {
+        let mut else_labels = HashMap::new();
+        for (i, inst) in insts.iter().enumerate() {
+            if let Instruction::Else = inst {
+                else_labels.insert(i, self.jit.label());
+            }
+        }
+        else_labels
+    }
+
+    fn find_closest_else_index(insts: &[Instruction], start: usize) -> Option<usize> {
+        let end_index = Self::find_matching_end_index(insts, start);
+        for (i, inst) in insts.iter().enumerate() {
+            if i < start {
+                continue;
+            }
+            if let Instruction::Else = inst {
+                if i < end_index {
+                    return Some(i);
+                } else {
+                    return None;
+                }
+            }
+        }
+
+        None
+    }
+
     fn find_matching_end_index(insts: &[Instruction], start: usize) -> usize {
         let mut depth = 0;
         for (i, inst) in insts.iter().enumerate() {
@@ -210,6 +260,21 @@ impl X86JitCompiler<'_> {
         }
 
         panic!("no matching end found");
+    }
+
+    fn unwind_stack(&mut self, expected_stack_height: usize, num_results: usize) {
+        let mut result_buf = VecDeque::new();
+        for _ in 0..num_results {
+            result_buf.push_back(self.reg_allocator.pop());
+        }
+
+        while self.reg_allocator.size() > expected_stack_height.saturating_sub(num_results) {
+            self.reg_allocator.pop();
+        }
+
+        for _ in 0..num_results {
+            self.reg_allocator.push(result_buf.pop_back().unwrap());
+        }
     }
 
     fn emit_trap(&mut self) {

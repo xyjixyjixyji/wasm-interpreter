@@ -20,7 +20,7 @@ impl RegWithType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct X86RegisterAllocator {
     // Register vector, which is the currently used registers, representing
     // values staying on the wasm operand stack.
@@ -46,10 +46,6 @@ impl X86RegisterAllocator {
 
     pub fn clear_vec(&mut self) {
         self.reg_vec.clear();
-    }
-
-    pub fn get_vec(&self) -> &Vec<RegWithType> {
-        &self.reg_vec
     }
 
     /// Get the stack top, which is the last element of the register vector.

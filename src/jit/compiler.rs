@@ -311,7 +311,7 @@ impl X86JitCompiler<'_> {
         self.control_flow_stack.push_back(WasmJitControlFlowFrame {
             control_type: WasmJitControlFlowType::Block,
             expected_stack_height: 0,
-            entry_regvec_snapshot: self.reg_allocator.get_vec().clone(),
+            entry_regalloc_snapshot: self.reg_allocator.clone(),
             num_results: fdecl.get_sig().results().len(),
             start_label,
             end_label,

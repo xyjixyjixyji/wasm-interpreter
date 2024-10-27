@@ -1,12 +1,10 @@
-use std::collections::VecDeque;
-
 use monoasm::*;
 use monoasm_macro::monoasm;
 use wasmparser::BlockType;
 
 use crate::{
     jit::{
-        regalloc::{RegWithType, Register, X86Register, REG_TEMP, REG_TEMP2},
+        regalloc::{RegWithType, Register, X86Register, X86RegisterAllocator, REG_TEMP, REG_TEMP2},
         utils::emit_mov_reg_to_reg,
         X86JitCompiler,
     },
@@ -17,7 +15,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) enum WasmJitControlFlowType {
     Block,
-    If { else_label: Option<DestLabel> },
+    If,
     Loop,
 }
 
@@ -25,7 +23,7 @@ pub(crate) enum WasmJitControlFlowType {
 pub(crate) struct WasmJitControlFlowFrame {
     pub(crate) control_type: WasmJitControlFlowType,
     pub(crate) expected_stack_height: usize,
-    pub(crate) entry_regvec_snapshot: Vec<RegWithType>,
+    pub(crate) entry_regalloc_snapshot: X86RegisterAllocator,
     pub(crate) num_results: usize,
     pub(crate) start_label: DestLabel,
     pub(crate) end_label: DestLabel,
@@ -191,22 +189,60 @@ impl X86JitCompiler<'_> {
 
     pub(crate) fn emit_block(
         &mut self,
-        ty: &BlockType,
+        ty: BlockType,
         block_begin: DestLabel,
         block_end: DestLabel,
     ) {
         let expected_stack_size =
-            self.reg_allocator.size() + stack_height_delta(self.module.clone(), *ty);
+            self.reg_allocator.size() + stack_height_delta(self.module.clone(), ty);
         self.control_flow_stack.push_back(WasmJitControlFlowFrame {
             control_type: WasmJitControlFlowType::Block,
             expected_stack_height: expected_stack_size,
-            entry_regvec_snapshot: self.reg_allocator.get_vec().clone(),
-            num_results: block_type_num_results(self.module.clone(), *ty),
+            entry_regalloc_snapshot: self.reg_allocator.clone(),
+            num_results: block_type_num_results(self.module.clone(), ty),
             start_label: block_begin,
             end_label: block_end,
         });
 
         self.emit_single_label(block_begin);
+    }
+
+    pub(crate) fn emit_if(
+        &mut self,
+        cond: Register,
+        ty: BlockType,
+        else_label: Option<DestLabel>,
+        end_label: DestLabel,
+    ) {
+        let start_label = self.jit.label();
+
+        let expected_stack_height =
+            self.reg_allocator.size() + stack_height_delta(self.module.clone(), ty);
+        self.control_flow_stack.push_back(WasmJitControlFlowFrame {
+            control_type: WasmJitControlFlowType::If,
+            expected_stack_height,
+            entry_regalloc_snapshot: self.reg_allocator.clone(),
+            num_results: block_type_num_results(self.module.clone(), ty),
+            start_label,
+            end_label,
+        });
+
+        self.emit_single_label(start_label);
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), cond);
+        if let Some(else_label) = else_label {
+            monoasm!(
+                &mut self.jit,
+                cmpq R(REG_TEMP.as_index()), 0;
+                jz else_label; /* else block executes until it reaches end */
+            );
+        } else {
+            // if there is no else block, we jump to the end directly
+            monoasm!(
+                &mut self.jit,
+                cmpq R(REG_TEMP.as_index()), 0;
+                jmp end_label;
+            );
+        }
     }
 
     pub(crate) fn emit_br_table(
@@ -272,16 +308,15 @@ impl X86JitCompiler<'_> {
         }
 
         let target_frame = self.control_flow_stack[stack_depth - target_depth - 1].clone();
-        self.unwind_stack(target_frame.expected_stack_height, target_frame.num_results);
 
         match target_frame.control_type {
-            WasmJitControlFlowType::Block => {
+            WasmJitControlFlowType::Block { .. } => {
                 // we dont need to truncate the stack here, because the jit code
                 // is not actually run during codegen
                 self.emit_jmp(target_frame.end_label);
             }
             WasmJitControlFlowType::If { .. } => todo!(),
-            WasmJitControlFlowType::Loop => todo!(),
+            WasmJitControlFlowType::Loop { .. } => todo!(),
         }
     }
 
@@ -301,21 +336,6 @@ impl X86JitCompiler<'_> {
 }
 
 impl X86JitCompiler<'_> {
-    fn unwind_stack(&mut self, expected_stack_height: usize, num_results: usize) {
-        let mut result_buf = VecDeque::new();
-        for _ in 0..num_results {
-            result_buf.push_back(self.reg_allocator.pop());
-        }
-
-        while self.reg_allocator.size() > expected_stack_height.saturating_sub(num_results) {
-            self.reg_allocator.pop();
-        }
-
-        for _ in 0..num_results {
-            self.reg_allocator.push(result_buf.pop_back().unwrap());
-        }
-    }
-
     fn setup_function_call_arguments(&mut self, nr_args: usize) {
         let mut args = Vec::new();
         let mut to_push = Vec::new();
