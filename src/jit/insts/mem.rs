@@ -82,7 +82,14 @@ impl X86JitCompiler<'_> {
         self.linear_mem.grow(&mut self.jit, npages);
     }
 
-    pub(crate) fn emit_load_mem(&mut self, dst: Register, base: Register, offset: u32, width: u32) {
+    pub(crate) fn emit_load_mem(
+        &mut self,
+        dst: Register,
+        base: Register,
+        offset: u32,
+        width: u32,
+        sign_extend: bool,
+    ) {
         self.get_effective_address(REG_TEMP, base, offset); // REG_TEMP stores the effective address
 
         // 2. load the result into dst
@@ -99,18 +106,36 @@ impl X86JitCompiler<'_> {
                     &mut self.jit,
                     movl R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
                 );
+                if sign_extend {
+                    monoasm!(
+                        &mut self.jit,
+                        movsxl R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                    );
+                }
             }
             2 => {
                 monoasm!(
                     &mut self.jit,
                     movw R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
                 );
+                if sign_extend {
+                    monoasm!(
+                        &mut self.jit,
+                        movsxw R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                    );
+                }
             }
             1 => {
                 monoasm!(
                     &mut self.jit,
                     movb R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
                 );
+                if sign_extend {
+                    monoasm!(
+                        &mut self.jit,
+                        movsxb R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                    );
+                }
             }
             _ => unreachable!("invalid width: {}", width),
         }

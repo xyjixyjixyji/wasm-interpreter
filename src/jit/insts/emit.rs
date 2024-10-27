@@ -143,18 +143,38 @@ impl X86JitCompiler<'_> {
                     let base = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
-                    self.emit_load_mem(dst, base.reg, offset, 4);
+                    self.emit_load_mem(dst, base.reg, offset, 4, false);
                 }
                 Instruction::F64Load { memarg } => {
                     let base = self.reg_allocator.pop();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
-                    self.emit_load_mem(dst, base.reg, offset, 8);
+                    self.emit_load_mem(dst, base.reg, offset, 8, false);
                 }
-                Instruction::I32Load8S { memarg } => todo!(),
-                Instruction::I32Load8U { memarg } => todo!(),
-                Instruction::I32Load16S { memarg } => todo!(),
-                Instruction::I32Load16U { memarg } => todo!(),
+                Instruction::I32Load8S { memarg } => {
+                    let base = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let dst = self.reg_allocator.next().reg;
+                    self.emit_load_mem(dst, base.reg, offset, 1, true);
+                }
+                Instruction::I32Load8U { memarg } => {
+                    let base = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let dst = self.reg_allocator.next().reg;
+                    self.emit_load_mem(dst, base.reg, offset, 1, false);
+                }
+                Instruction::I32Load16S { memarg } => {
+                    let base = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let dst = self.reg_allocator.next().reg;
+                    self.emit_load_mem(dst, base.reg, offset, 2, true);
+                }
+                Instruction::I32Load16U { memarg } => {
+                    let base = self.reg_allocator.pop();
+                    let offset = memarg.offset;
+                    let dst = self.reg_allocator.next().reg;
+                    self.emit_load_mem(dst, base.reg, offset, 2, false);
+                }
                 Instruction::I32Store { memarg } => {
                     let value = self.reg_allocator.pop();
                     let offset = memarg.offset;
