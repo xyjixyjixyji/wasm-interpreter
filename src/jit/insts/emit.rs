@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use crate::{
     jit::{
@@ -40,7 +40,11 @@ impl X86JitCompiler<'_> {
 
                     self.emit_block(*ty, block_begin, block_end);
                 }
-                Instruction::Loop { ty } => todo!(),
+                Instruction::Loop { ty } => {
+                    let end_ind = Self::find_matching_end_index(insts, i);
+                    let end_label = *end_labels.get(&end_ind).unwrap();
+                    self.emit_loop(*ty, end_label);
+                }
                 Instruction::If { ty } => {
                     let else_ind = Self::find_closest_else_index(insts, i);
                     let else_label = else_ind.map(|ind| else_labels[&ind]);
@@ -260,21 +264,6 @@ impl X86JitCompiler<'_> {
         }
 
         panic!("no matching end found");
-    }
-
-    fn unwind_stack(&mut self, expected_stack_height: usize, num_results: usize) {
-        let mut result_buf = VecDeque::new();
-        for _ in 0..num_results {
-            result_buf.push_back(self.reg_allocator.pop());
-        }
-
-        while self.reg_allocator.size() > expected_stack_height.saturating_sub(num_results) {
-            self.reg_allocator.pop();
-        }
-
-        for _ in 0..num_results {
-            self.reg_allocator.push(result_buf.pop_back().unwrap());
-        }
     }
 
     fn emit_trap(&mut self) {

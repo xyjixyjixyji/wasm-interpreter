@@ -48,6 +48,10 @@ impl X86RegisterAllocator {
         self.reg_vec.clear();
     }
 
+    pub fn get_vec(&self) -> &Vec<RegWithType> {
+        &self.reg_vec
+    }
+
     /// Get the stack top, which is the last element of the register vector.
     pub fn top(&self) -> Option<RegWithType> {
         self.reg_vec.last().copied()

@@ -35,7 +35,12 @@ impl X86JitCompiler<'_> {
             F64Binop::Le => todo!(),
             F64Binop::Ge => todo!(),
             F64Binop::Sub => todo!(),
-            F64Binop::Mul => todo!(),
+            F64Binop::Mul => {
+                monoasm!(
+                    &mut self.jit,
+                    mulsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                );
+            }
             F64Binop::Div => todo!(),
             F64Binop::Min => todo!(),
             F64Binop::Max => todo!(),

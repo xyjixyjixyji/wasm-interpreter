@@ -286,9 +286,10 @@ impl<'a> WasmFunctionExecutorImpl<'a> {
     fn setup_locals(main_locals: Option<Vec<WasmValue>>, func: &FuncDecl) -> Vec<WasmValue> {
         let mut locals = main_locals.unwrap_or_default();
 
-        locals.extend(func.get_pure_locals().iter().flat_map(|(cnt, ty)| {
-            vec![WasmValue::default_value(ty); usize::try_from(*cnt).expect("local count overflow")]
-        }));
+        let pure_locals = func.get_pure_locals();
+        for ty in pure_locals {
+            locals.push(WasmValue::default_value(&ty));
+        }
 
         locals
     }

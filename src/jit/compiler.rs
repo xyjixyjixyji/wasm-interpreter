@@ -377,8 +377,8 @@ impl X86JitCompiler<'_> {
             self.emit_mov_i32_to_reg(0, r.reg);
 
             match l {
-                (_, ValType::I32) => local_types.push(ValueType::I32),
-                (_, ValType::F64) => local_types.push(ValueType::F64),
+                ValType::I32 => local_types.push(ValueType::I32),
+                ValType::F64 => local_types.push(ValueType::F64),
                 _ => unreachable!(),
             }
         }

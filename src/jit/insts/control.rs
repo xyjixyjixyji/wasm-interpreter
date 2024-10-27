@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use monoasm::*;
 use monoasm_macro::monoasm;
 use wasmparser::BlockType;
@@ -207,6 +209,22 @@ impl X86JitCompiler<'_> {
         self.emit_single_label(block_begin);
     }
 
+    pub(crate) fn emit_loop(&mut self, ty: BlockType, end_label: DestLabel) {
+        let start_label = self.jit.label();
+        let expected_stack_height =
+            self.reg_allocator.size() + stack_height_delta(self.module.clone(), ty);
+        self.control_flow_stack.push_back(WasmJitControlFlowFrame {
+            control_type: WasmJitControlFlowType::Loop,
+            expected_stack_height,
+            entry_regalloc_snapshot: self.reg_allocator.clone(),
+            num_results: block_type_num_results(self.module.clone(), ty),
+            start_label,
+            end_label,
+        });
+
+        self.emit_single_label(start_label);
+    }
+
     pub(crate) fn emit_if(
         &mut self,
         cond: Register,
@@ -310,13 +328,36 @@ impl X86JitCompiler<'_> {
         let target_frame = self.control_flow_stack[stack_depth - target_depth - 1].clone();
 
         match target_frame.control_type {
-            WasmJitControlFlowType::Block { .. } => {
+            WasmJitControlFlowType::Block { .. } | WasmJitControlFlowType::If { .. } => {
                 // we dont need to truncate the stack here, because the jit code
                 // is not actually run during codegen
                 self.emit_jmp(target_frame.end_label);
             }
-            WasmJitControlFlowType::If { .. } => todo!(),
-            WasmJitControlFlowType::Loop { .. } => todo!(),
+            // In loop, we need to emit moves in order to reconstruct the
+            // register state so a consistent register state is maintained
+            WasmJitControlFlowType::Loop => {
+                self.unwind_stack(target_frame.expected_stack_height, target_frame.num_results);
+
+                // make register state consistent
+                let now_regalloc_vec = self.reg_allocator.get_vec().clone();
+                let target_frame_regalloc_vec = target_frame.entry_regalloc_snapshot.get_vec();
+
+                // now we need to recover the register state by generating moves
+                // keep the last registers
+                let now_regalloc_vec = now_regalloc_vec
+                    .iter()
+                    .skip(now_regalloc_vec.len() - target_frame_regalloc_vec.len())
+                    .collect::<Vec<_>>();
+                // for each different register, generate a move
+                for (i, reg) in now_regalloc_vec.iter().enumerate().rev() {
+                    let target_reg = target_frame_regalloc_vec[i].reg;
+                    if reg.reg != target_reg {
+                        emit_mov_reg_to_reg(&mut self.jit, target_reg, reg.reg);
+                    }
+                }
+
+                self.emit_jmp(target_frame.start_label);
+            }
         }
     }
 
@@ -336,6 +377,21 @@ impl X86JitCompiler<'_> {
 }
 
 impl X86JitCompiler<'_> {
+    pub(crate) fn unwind_stack(&mut self, expected_stack_height: usize, num_results: usize) {
+        let mut result_buf = VecDeque::new();
+        for _ in 0..num_results {
+            result_buf.push_back(self.reg_allocator.pop());
+        }
+
+        while self.reg_allocator.size() > expected_stack_height.saturating_sub(num_results) {
+            self.reg_allocator.pop();
+        }
+
+        for _ in 0..num_results {
+            self.reg_allocator.push(result_buf.pop_back().unwrap());
+        }
+    }
+
     fn setup_function_call_arguments(&mut self, nr_args: usize) {
         let mut args = Vec::new();
         let mut to_push = Vec::new();

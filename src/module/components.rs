@@ -19,7 +19,7 @@ impl ImportSet<'_> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncDecl {
     sig: FuncType,
-    pure_locals: Vec<(u32, ValType)>,
+    pure_locals: Vec<(u32, ValType)>, // count, type
     insts: Vec<Instruction>,
 }
 
@@ -36,8 +36,14 @@ impl FuncDecl {
         &self.sig
     }
 
-    pub fn get_pure_locals(&self) -> &[(u32, ValType)] {
-        &self.pure_locals
+    pub fn get_pure_locals(&self) -> Vec<ValType> {
+        let mut pure_locals = vec![];
+        for (count, ty) in &self.pure_locals {
+            for _ in 0..*count {
+                pure_locals.push(*ty);
+            }
+        }
+        pure_locals
     }
 
     pub fn get_insts(&self) -> &Vec<Instruction> {
