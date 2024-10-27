@@ -38,13 +38,7 @@ impl X86JitCompiler<'_> {
         }
     }
 
-    pub(crate) fn emit_local_set(
-        &mut self,
-        value: Register,
-        local_idx: u32,
-        local_types: &[ValueType],
-    ) {
-        let ty = local_types[local_idx as usize];
+    pub(crate) fn emit_local_set(&mut self, value: Register, local_idx: u32, ty: ValueType) {
         let offset = local_idx * 8;
         match ty {
             ValueType::I32 => {
@@ -56,6 +50,26 @@ impl X86JitCompiler<'_> {
             }
             ValueType::F64 => {
                 emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), value);
+                monoasm!(
+                    &mut self.jit,
+                    movsd [R(REG_LOCAL_BASE.as_index()) + (offset)], xmm(REG_TEMP_FP.as_index());
+                );
+            }
+        }
+    }
+
+    pub(crate) fn emit_local_tee(&mut self, top_of_stack: Register, local_idx: u32, ty: ValueType) {
+        let offset = local_idx * 8;
+        match ty {
+            ValueType::I32 => {
+                emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), top_of_stack);
+                monoasm!(
+                    &mut self.jit,
+                    movq [R(REG_LOCAL_BASE.as_index()) + (offset)], R(REG_TEMP2.as_index());
+                );
+            }
+            ValueType::F64 => {
+                emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), top_of_stack);
                 monoasm!(
                     &mut self.jit,
                     movsd [R(REG_LOCAL_BASE.as_index()) + (offset)], xmm(REG_TEMP_FP.as_index());

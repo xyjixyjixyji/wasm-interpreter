@@ -122,9 +122,15 @@ impl X86JitCompiler<'_> {
                 }
                 Instruction::LocalSet { local_idx } => {
                     let value = self.reg_allocator.pop();
-                    self.emit_local_set(value.reg, *local_idx, local_types);
+                    let ty = local_types[*local_idx as usize];
+                    self.emit_local_set(value.reg, *local_idx, ty);
                 }
-                Instruction::LocalTee { local_idx } => todo!(),
+                Instruction::LocalTee { local_idx } => {
+                    let value = self.reg_allocator.pop();
+                    let ty = local_types[*local_idx as usize];
+                    self.emit_local_tee(value.reg, *local_idx, ty);
+                    self.reg_allocator.push(value);
+                }
                 Instruction::GlobalGet { global_idx } => todo!(),
                 Instruction::GlobalSet { global_idx } => todo!(),
                 Instruction::I32Load { memarg } => {
