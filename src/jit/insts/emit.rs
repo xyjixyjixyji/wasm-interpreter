@@ -26,7 +26,7 @@ impl X86JitCompiler<'_> {
             match inst {
                 Instruction::I32Const { value } => {
                     let reg = self.reg_allocator.next();
-                    self.emit_mov_i32_to_reg(*value, reg.reg);
+                    self.emit_mov_rawvalue_to_reg(*value as u64, reg.reg);
                 }
                 Instruction::Unreachable => {
                     self.emit_trap();
@@ -96,7 +96,7 @@ impl X86JitCompiler<'_> {
                         .get_sig()
                         .params()
                         .len();
-                    self.emit_mov_i32_to_reg(*func_idx as i32, Register::Reg(REG_TEMP));
+                    self.emit_mov_rawvalue_to_reg(*func_idx as u64, Register::Reg(REG_TEMP));
                     self.emit_call(REG_TEMP, nargs);
                 }
                 Instruction::CallIndirect {
@@ -131,8 +131,14 @@ impl X86JitCompiler<'_> {
                     self.emit_local_tee(value.reg, *local_idx, ty);
                     self.reg_allocator.push(value);
                 }
-                Instruction::GlobalGet { global_idx } => todo!(),
-                Instruction::GlobalSet { global_idx } => todo!(),
+                Instruction::GlobalGet { global_idx } => {
+                    let dst = self.reg_allocator.next().reg;
+                    self.emit_global_get(dst, *global_idx);
+                }
+                Instruction::GlobalSet { global_idx } => {
+                    let value = self.reg_allocator.pop();
+                    self.emit_global_set(value.reg, *global_idx);
+                }
                 Instruction::I32Load { memarg } => {
                     let base = self.reg_allocator.pop();
                     let offset = memarg.offset;
@@ -197,7 +203,7 @@ impl X86JitCompiler<'_> {
                 }
                 Instruction::F64Const { value } => {
                     let reg = self.reg_allocator.next_xmm();
-                    self.emit_mov_f64_to_reg(*value, reg.reg);
+                    self.emit_mov_rawvalue_to_reg(value.to_bits(), reg.reg);
                 }
                 Instruction::I32Unop(_) => todo!(),
                 Instruction::I32Binop(binop) => {

@@ -269,24 +269,24 @@ impl X86JitCompiler<'_> {
                 let reg = Register::from_ith_argument(i as u32);
                 match param {
                     WasmValue::I32(v) => {
-                        self.emit_mov_i32_to_reg(*v, reg);
+                        self.emit_mov_rawvalue_to_reg(*v as u64, reg);
                     }
                     WasmValue::F64(v) => {
-                        self.emit_mov_f64_to_reg(*v, reg);
+                        self.emit_mov_rawvalue_to_reg(v.to_bits(), reg);
                     }
                 }
             } else {
                 // push the constant to stack
                 match param {
                     WasmValue::I32(v) => {
-                        self.emit_mov_i32_to_reg(*v, Register::Reg(REG_TEMP));
+                        self.emit_mov_rawvalue_to_reg(*v as u64, Register::Reg(REG_TEMP));
                         monoasm!(
                             &mut self.jit,
                             pushq R(REG_TEMP.as_index());
                         );
                     }
                     WasmValue::F64(v) => {
-                        self.emit_mov_f64_to_reg(*v, Register::FpReg(REG_TEMP_FP));
+                        self.emit_mov_rawvalue_to_reg(v.to_bits(), Register::FpReg(REG_TEMP_FP));
                         monoasm!(
                             &mut self.jit,
                             pushq R(REG_TEMP_FP.as_index());
@@ -374,7 +374,7 @@ impl X86JitCompiler<'_> {
 
         for l in fdecl.get_pure_locals() {
             let r = self.reg_allocator.new_spill(ValueType::I32);
-            self.emit_mov_i32_to_reg(0, r.reg);
+            self.emit_mov_rawvalue_to_reg(0, r.reg);
 
             match l {
                 ValType::I32 => local_types.push(ValueType::I32),

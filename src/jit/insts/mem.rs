@@ -164,6 +164,26 @@ impl X86JitCompiler<'_> {
         }
     }
 
+    pub(crate) fn emit_global_get(&mut self, dst: Register, global_idx: u32) {
+        let global_addr = self.globals.as_ptr() as u64 + (global_idx * 8) as u64;
+        monoasm!(
+            &mut self.jit,
+            movq R(REG_TEMP.as_index()), (global_addr);
+            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
+        );
+        emit_mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
+    }
+
+    pub(crate) fn emit_global_set(&mut self, value: Register, global_idx: u32) {
+        let global_addr = self.globals.as_ptr() as u64 + (global_idx * 8) as u64;
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), value);
+        monoasm!(
+            &mut self.jit,
+            movq R(REG_TEMP2.as_index()), (global_addr);
+            movq [R(REG_TEMP2.as_index())], R(REG_TEMP.as_index());
+        );
+    }
+
     pub(crate) fn store_mem_page_size(&mut self, dst: Register) {
         self.linear_mem.read_memory_size_in_page(&mut self.jit, dst);
     }

@@ -74,12 +74,19 @@ pub(crate) fn emit_mov_reg_to_reg(jit: &mut JitMemory, dst: Register, src: Regis
 }
 
 impl X86JitCompiler<'_> {
-    pub(crate) fn emit_mov_i32_to_reg(&mut self, value: i32, reg: Register) {
+    pub(crate) fn emit_mov_rawvalue_to_reg(&mut self, value: u64, reg: Register) {
         match reg {
             Register::Reg(r) => {
                 monoasm!(
                     &mut self.jit,
                     movq R(r.as_index()), (value);
+                );
+            }
+            Register::FpReg(r) => {
+                monoasm!(
+                    &mut self.jit,
+                    movq R(REG_TEMP.as_index()), (value);
+                    movq xmm(r.as_index()), R(REG_TEMP.as_index());
                 );
             }
             Register::Stack(offset) => {
@@ -88,27 +95,6 @@ impl X86JitCompiler<'_> {
                     movq [rsp + (offset)], (value);
                 );
             }
-            Register::FpReg(_) => panic!("invalid mov for i32 to fp reg"),
-        }
-    }
-
-    pub(crate) fn emit_mov_f64_to_reg(&mut self, value: f64, reg: Register) {
-        let bits = value.to_bits();
-        match reg {
-            Register::FpReg(r) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq R(REG_TEMP.as_index()), (bits);
-                    movq xmm(r.as_index()), R(REG_TEMP.as_index());
-                );
-            }
-            Register::Stack(offset) => {
-                monoasm!(
-                    &mut self.jit,
-                    movq [rsp + (offset)], (bits);
-                );
-            }
-            _ => panic!("invalid mov for f32 to normal reg"),
         }
     }
 
