@@ -326,12 +326,14 @@ impl X86JitCompiler<'_> {
         });
     }
 
+    // TODO: refactor this......
     fn setup_locals(&mut self, fdecl: &FuncDecl) -> Vec<ValueType> {
         let mut local_types = Vec::new();
+        let mut local_base_set = false;
         for (i, params) in fdecl.get_sig().params().iter().enumerate() {
             let r = self.reg_allocator.new_spill(ValueType::I32);
 
-            if i == 0 {
+            if !local_base_set {
                 // store the first local to the base of the locals
                 match r.reg {
                     Register::Stack(o) => {
@@ -343,6 +345,7 @@ impl X86JitCompiler<'_> {
                     }
                     _ => unreachable!("locals are all spilled"),
                 }
+                local_base_set = true;
             }
 
             if i < 6 {
@@ -383,6 +386,19 @@ impl X86JitCompiler<'_> {
         for l in fdecl.get_pure_locals() {
             let r = self.reg_allocator.new_spill(ValueType::I32);
             self.emit_mov_rawvalue_to_reg(0, r.reg);
+
+            if !local_base_set {
+                match r.reg {
+                    Register::Stack(o) => {
+                        monoasm!(
+                            &mut self.jit,
+                            movq R(REG_LOCAL_BASE.as_index()), rsp;
+                            addq R(REG_LOCAL_BASE.as_index()), (o);
+                        );
+                    }
+                    _ => unreachable!(),
+                }
+            }
 
             match l {
                 ValType::I32 => local_types.push(ValueType::I32),

@@ -96,15 +96,19 @@ impl X86JitCompiler<'_> {
         monoasm!(
             &mut self.jit,
             addq R(REG_TEMP.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp = reg_memory_base + effective_addr
-            movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())]; // <-- reg_temp = *reg_temp
         );
 
         match width {
-            8 => {}
+            8 => {
+                monoasm!(
+                    &mut self.jit,
+                    movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
+                );
+            }
             4 => {
                 monoasm!(
                     &mut self.jit,
-                    movl R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                    movl R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
                 );
                 if sign_extend {
                     monoasm!(
@@ -116,7 +120,7 @@ impl X86JitCompiler<'_> {
             2 => {
                 monoasm!(
                     &mut self.jit,
-                    movw R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                    movw R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
                 );
                 if sign_extend {
                     monoasm!(
@@ -128,7 +132,7 @@ impl X86JitCompiler<'_> {
             1 => {
                 monoasm!(
                     &mut self.jit,
-                    movb R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                    movb R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
                 );
                 if sign_extend {
                     monoasm!(
