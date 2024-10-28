@@ -15,6 +15,16 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+pub(crate) struct RegReconcileInfo {
+    /// The end label of the branch target
+    pub(crate) target_end_label: DestLabel,
+    /// The label for the start of the reconciliation
+    pub(crate) reconcile_start_label: DestLabel,
+    /// The register allocator snapshot at the branch point
+    pub(crate) regalloc_snapshot: X86RegisterAllocator,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) enum WasmJitControlFlowType {
     Block,
     If,
@@ -331,7 +341,17 @@ impl X86JitCompiler<'_> {
             WasmJitControlFlowType::Block { .. } | WasmJitControlFlowType::If { .. } => {
                 // we dont need to truncate the stack here, because the jit code
                 // is not actually run during codegen
-                self.emit_jmp(target_frame.end_label);
+                self.unwind_stack(target_frame.expected_stack_height, target_frame.num_results);
+
+                let reconcile_start_label = self.jit.label();
+                self.reg_reconcile_info.push(RegReconcileInfo {
+                    target_end_label: target_frame.end_label,
+                    reconcile_start_label,
+                    regalloc_snapshot: self.reg_allocator.clone(),
+                });
+
+                // the reconciliation starts there, within the end instruction
+                self.emit_jmp(reconcile_start_label);
             }
             // In loop, we need to emit moves in order to reconstruct the
             // register state so a consistent register state is maintained
@@ -380,11 +400,15 @@ impl X86JitCompiler<'_> {
     pub(crate) fn unwind_stack(&mut self, expected_stack_height: usize, num_results: usize) {
         let mut result_buf = VecDeque::new();
         for _ in 0..num_results {
-            result_buf.push_back(self.reg_allocator.pop());
+            if let Some(reg) = self.reg_allocator.pop_opt() {
+                result_buf.push_back(reg);
+            } else {
+                return; /* unreachable code */
+            }
         }
 
         while self.reg_allocator.size() > expected_stack_height.saturating_sub(num_results) {
-            self.reg_allocator.pop();
+            self.reg_allocator.pop_noopt();
         }
 
         for _ in 0..num_results {
@@ -398,7 +422,7 @@ impl X86JitCompiler<'_> {
 
         // Collect all arguments from reg_allocator (stack top first)
         for _ in 0..nr_args {
-            let arg = self.reg_allocator.pop();
+            let arg = self.reg_allocator.pop_noopt();
             args.insert(0, arg);
         }
 

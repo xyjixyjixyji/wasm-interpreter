@@ -15,8 +15,8 @@ use monoasm_macro::monoasm;
 impl X86JitCompiler<'_> {
     // jit compile *a = a op b*
     pub(crate) fn emit_f64_binop(&mut self, binop: &F64Binop) {
-        let b = self.reg_allocator.pop().reg;
-        let a = self.reg_allocator.pop().reg;
+        let b = self.reg_allocator.pop_noopt().reg;
+        let a = self.reg_allocator.pop_noopt().reg;
 
         emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), a);
         emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP2), b);
@@ -28,22 +28,102 @@ impl X86JitCompiler<'_> {
                     addsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
                 );
             }
-            F64Binop::Eq => todo!(),
-            F64Binop::Ne => todo!(),
-            F64Binop::Lt => todo!(),
-            F64Binop::Gt => todo!(),
-            F64Binop::Le => todo!(),
-            F64Binop::Ge => todo!(),
-            F64Binop::Sub => todo!(),
+            F64Binop::Eq => {
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    seteq R(REG_TEMP.as_index());
+                );
+                let dst = self.reg_allocator.next();
+                emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
+                self.reg_allocator.push(dst);
+                return; // this returns a i32, so we return early
+            }
+            F64Binop::Ne => {
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    setne R(REG_TEMP.as_index());
+                );
+                let dst = self.reg_allocator.next();
+                emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
+                self.reg_allocator.push(dst);
+                return; // this returns a i32, so we return early
+            }
+            F64Binop::Lt => {
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    setlt R(REG_TEMP.as_index());
+                );
+                let dst = self.reg_allocator.next();
+                emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
+                self.reg_allocator.push(dst);
+                return; // this returns a i32, so we return early
+            }
+            F64Binop::Gt => {
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    setgt R(REG_TEMP.as_index());
+                );
+                let dst = self.reg_allocator.next();
+                emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
+                self.reg_allocator.push(dst);
+                return; // this returns a i32, so we return early
+            }
+            F64Binop::Le => {
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    setle R(REG_TEMP.as_index());
+                );
+                let dst = self.reg_allocator.next();
+                emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
+                self.reg_allocator.push(dst);
+                return; // this returns a i32, so we return early
+            }
+            F64Binop::Ge => {
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    setge R(REG_TEMP.as_index());
+                );
+                let dst = self.reg_allocator.next();
+                emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
+                self.reg_allocator.push(dst);
+                return; // this returns a i32, so we return early
+            }
+            F64Binop::Sub => {
+                monoasm!(
+                    &mut self.jit,
+                    subsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                );
+            }
             F64Binop::Mul => {
                 monoasm!(
                     &mut self.jit,
                     mulsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
                 );
             }
-            F64Binop::Div => todo!(),
-            F64Binop::Min => todo!(),
-            F64Binop::Max => todo!(),
+            F64Binop::Div => {
+                monoasm!(
+                    &mut self.jit,
+                    divsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                );
+            }
+            F64Binop::Min => {
+                monoasm!(
+                    &mut self.jit,
+                    minsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                );
+            }
+            F64Binop::Max => {
+                monoasm!(
+                    &mut self.jit,
+                    maxsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                );
+            }
         }
 
         emit_mov_reg_to_reg(&mut self.jit, a, Register::FpReg(REG_TEMP_FP));
@@ -51,8 +131,8 @@ impl X86JitCompiler<'_> {
     }
 
     pub(crate) fn emit_i32_binop(&mut self, binop: &I32Binop) {
-        let b = self.reg_allocator.pop();
-        let a = self.reg_allocator.pop();
+        let b = self.reg_allocator.pop_noopt();
+        let a = self.reg_allocator.pop_noopt();
 
         emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), a.reg);
         emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), b.reg);
@@ -259,11 +339,36 @@ impl X86JitCompiler<'_> {
                     xorq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a ^ b
                 );
             }
-            I32Binop::Shl => todo!(),
-            I32Binop::ShrS => todo!(),
-            I32Binop::ShrU => todo!(),
-            I32Binop::Rotl => todo!(),
-            I32Binop::Rotr => todo!(),
+            I32Binop::Shl => {
+                monoasm!(
+                    &mut self.jit,
+                    shlq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a << b
+                );
+            }
+            I32Binop::ShrS => {
+                monoasm!(
+                    &mut self.jit,
+                    sarq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a >> b
+                );
+            }
+            I32Binop::ShrU => {
+                monoasm!(
+                    &mut self.jit,
+                    shrq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a >> b
+                );
+            }
+            I32Binop::Rotl => {
+                monoasm!(
+                    &mut self.jit,
+                    rolq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a << b
+                );
+            }
+            I32Binop::Rotr => {
+                monoasm!(
+                    &mut self.jit,
+                    rorq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // a = a >> b
+                );
+            }
         }
 
         emit_mov_reg_to_reg(&mut self.jit, a.reg, Register::Reg(REG_TEMP));

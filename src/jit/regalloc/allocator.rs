@@ -65,8 +65,12 @@ impl X86RegisterAllocator {
         self.reg_vec.push(rt);
     }
 
-    pub fn pop(&mut self) -> RegWithType {
+    pub fn pop_noopt(&mut self) -> RegWithType {
         self.reg_vec.pop().expect("no register to drop")
+    }
+
+    pub fn pop_opt(&mut self) -> Option<RegWithType> {
+        self.reg_vec.pop()
     }
 
     /// Allocate a position to hold the value.

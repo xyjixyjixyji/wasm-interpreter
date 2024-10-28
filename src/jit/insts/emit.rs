@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     jit::{
         regalloc::{Register, REG_TEMP},
+        utils::emit_mov_reg_to_reg,
         ValueType, X86JitCompiler,
     },
     module::insts::Instruction,
@@ -18,9 +19,9 @@ impl X86JitCompiler<'_> {
         insts: &[Instruction],
         local_types: &[ValueType],
         stack_size: u64,
+        else_labels: HashMap<usize, DestLabel>,
+        end_labels: HashMap<usize, DestLabel>,
     ) -> Result<()> {
-        let end_labels = self.pregen_labals_for_ends(insts);
-        let else_labels = self.pregen_labels_for_else(insts);
         let mut nbrtable = 0;
         for (i, inst) in insts.iter().enumerate() {
             match inst {
@@ -51,7 +52,7 @@ impl X86JitCompiler<'_> {
                     let end_ind = Self::find_matching_end_index(insts, i);
                     let end_label = *end_labels.get(&end_ind).unwrap();
 
-                    let cond = self.reg_allocator.pop();
+                    let cond = self.reg_allocator.pop_noopt();
                     self.emit_if(cond.reg, *ty, else_label, end_label);
                 }
                 Instruction::Else => {
@@ -67,20 +68,23 @@ impl X86JitCompiler<'_> {
                     self.reg_allocator = regalloc_snapshot;
                 }
                 Instruction::End => {
-                    let frame = self.control_flow_stack.pop_back().unwrap();
-                    // unwind the stack, so only the results are in the top of the stack
-                    self.unwind_stack(frame.expected_stack_height, frame.num_results);
-                    self.emit_single_label(*end_labels.get(&i).unwrap());
+                    self.control_flow_stack.pop_back().unwrap();
+                    log::debug!("i: {}, end label: {:?}", i, end_labels);
+                    let end_label = *end_labels.get(&i).unwrap();
+
+                    self.emit_jmp(end_label);
+                    self.emit_reg_reconciliation(end_label);
+                    self.emit_single_label(end_label);
                 }
                 Instruction::Br { rel_depth } => {
                     self.emit_br(*rel_depth);
                 }
                 Instruction::BrIf { rel_depth } => {
-                    let cond = self.reg_allocator.pop();
+                    let cond = self.reg_allocator.pop_noopt();
                     self.emit_br_if(cond.reg, *rel_depth);
                 }
                 Instruction::BrTable { table } => {
-                    let index = self.reg_allocator.pop();
+                    let index = self.reg_allocator.pop_noopt();
                     self.emit_br_table(index.reg, table, func_index, nbrtable);
                     nbrtable += 1;
                 }
@@ -103,16 +107,16 @@ impl X86JitCompiler<'_> {
                     type_index,
                     table_index,
                 } => {
-                    let callee_index_in_table = self.reg_allocator.pop();
+                    let callee_index_in_table = self.reg_allocator.pop_noopt();
                     self.emit_call_indirect(callee_index_in_table.reg, *type_index, *table_index);
                 }
                 Instruction::Drop => {
-                    self.reg_allocator.pop();
+                    self.reg_allocator.pop_noopt();
                 }
                 Instruction::Select => {
-                    let cond = self.reg_allocator.pop();
-                    let b = self.reg_allocator.pop();
-                    let a = self.reg_allocator.pop();
+                    let cond = self.reg_allocator.pop_noopt();
+                    let b = self.reg_allocator.pop_noopt();
+                    let a = self.reg_allocator.pop_noopt();
                     self.emit_select(a, cond, b, a);
                     self.reg_allocator.push(a);
                 }
@@ -121,12 +125,12 @@ impl X86JitCompiler<'_> {
                     self.emit_local_get(dst, *local_idx, local_types);
                 }
                 Instruction::LocalSet { local_idx } => {
-                    let value = self.reg_allocator.pop();
+                    let value = self.reg_allocator.pop_noopt();
                     let ty = local_types[*local_idx as usize];
                     self.emit_local_set(value.reg, *local_idx, ty);
                 }
                 Instruction::LocalTee { local_idx } => {
-                    let value = self.reg_allocator.pop();
+                    let value = self.reg_allocator.pop_noopt();
                     let ty = local_types[*local_idx as usize];
                     self.emit_local_tee(value.reg, *local_idx, ty);
                     self.reg_allocator.push(value);
@@ -136,67 +140,67 @@ impl X86JitCompiler<'_> {
                     self.emit_global_get(dst, *global_idx);
                 }
                 Instruction::GlobalSet { global_idx } => {
-                    let value = self.reg_allocator.pop();
+                    let value = self.reg_allocator.pop_noopt();
                     self.emit_global_set(value.reg, *global_idx);
                 }
                 Instruction::I32Load { memarg } => {
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
                     self.emit_load_mem(dst, base.reg, offset, 4, false);
                 }
                 Instruction::F64Load { memarg } => {
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
                     self.emit_load_mem(dst, base.reg, offset, 8, false);
                 }
                 Instruction::I32Load8S { memarg } => {
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
                     self.emit_load_mem(dst, base.reg, offset, 1, true);
                 }
                 Instruction::I32Load8U { memarg } => {
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
                     self.emit_load_mem(dst, base.reg, offset, 1, false);
                 }
                 Instruction::I32Load16S { memarg } => {
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
                     self.emit_load_mem(dst, base.reg, offset, 2, true);
                 }
                 Instruction::I32Load16U { memarg } => {
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
                     let dst = self.reg_allocator.next().reg;
                     self.emit_load_mem(dst, base.reg, offset, 2, false);
                 }
                 Instruction::I32Store { memarg } => {
-                    let value = self.reg_allocator.pop();
+                    let value = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     self.emit_store_mem(base.reg, offset, value.reg, 4);
                 }
                 Instruction::F64Store { memarg } => {
-                    let value = self.reg_allocator.pop();
+                    let value = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     self.emit_store_mem(base.reg, offset, value.reg, 8);
                 }
                 Instruction::I32Store8 { memarg } => {
-                    let value = self.reg_allocator.pop();
+                    let value = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     self.emit_store_mem(base.reg, offset, value.reg, 1);
                 }
                 Instruction::I32Store16 { memarg } => {
-                    let value = self.reg_allocator.pop();
+                    let value = self.reg_allocator.pop_noopt();
                     let offset = memarg.offset;
-                    let base = self.reg_allocator.pop();
+                    let base = self.reg_allocator.pop_noopt();
                     self.emit_store_mem(base.reg, offset, value.reg, 2);
                 }
                 Instruction::MemorySize { mem } => {
@@ -212,7 +216,7 @@ impl X86JitCompiler<'_> {
                         return Err(anyhow!("memory.size: invalid memory index"));
                     }
 
-                    let additional_pages = self.reg_allocator.pop();
+                    let additional_pages = self.reg_allocator.pop_noopt();
                     // use a spill register to avoid aliasing
                     let old_mem_size = self.reg_allocator.new_spill(ValueType::I32);
 
@@ -237,26 +241,6 @@ impl X86JitCompiler<'_> {
         }
 
         Ok(())
-    }
-
-    fn pregen_labals_for_ends(&mut self, insts: &[Instruction]) -> HashMap<usize, DestLabel> {
-        let mut end_labals = HashMap::new();
-        for (i, inst) in insts.iter().enumerate() {
-            if let Instruction::End = inst {
-                end_labals.insert(i, self.jit.label());
-            }
-        }
-        end_labals
-    }
-
-    fn pregen_labels_for_else(&mut self, insts: &[Instruction]) -> HashMap<usize, DestLabel> {
-        let mut else_labels = HashMap::new();
-        for (i, inst) in insts.iter().enumerate() {
-            if let Instruction::Else = inst {
-                else_labels.insert(i, self.jit.label());
-            }
-        }
-        else_labels
     }
 
     fn find_closest_else_index(insts: &[Instruction], start: usize) -> Option<usize> {
@@ -300,5 +284,31 @@ impl X86JitCompiler<'_> {
 
     fn emit_trap(&mut self) {
         self.emit_jmp(self.trap_label);
+    }
+
+    fn emit_reg_reconciliation(&mut self, end_label: DestLabel) {
+        let infos = self
+            .reg_reconcile_info
+            .iter()
+            .filter(|info| info.target_end_label == end_label)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for info in infos {
+            self.emit_single_label(info.reconcile_start_label);
+            // reconciliation
+            let branch_point_regvec = info.regalloc_snapshot.get_vec().clone();
+            let now_regvec = self.reg_allocator.get_vec().clone();
+
+            for i in 0..branch_point_regvec.len() {
+                let branch_point_reg = branch_point_regvec[branch_point_regvec.len() - 1 - i];
+                let now_reg = now_regvec[now_regvec.len() - 1 - i];
+                if branch_point_reg != now_reg {
+                    emit_mov_reg_to_reg(&mut self.jit, now_reg.reg, branch_point_reg.reg);
+                }
+            }
+
+            self.emit_jmp(end_label);
+        }
     }
 }

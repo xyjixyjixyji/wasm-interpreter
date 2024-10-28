@@ -3,4 +3,4 @@ mod control;
 mod emit;
 mod mem;
 
-pub(crate) use control::{WasmJitControlFlowFrame, WasmJitControlFlowType};
+pub(crate) use control::{RegReconcileInfo, WasmJitControlFlowFrame, WasmJitControlFlowType};

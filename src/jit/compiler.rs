@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
-use super::insts::{WasmJitControlFlowFrame, WasmJitControlFlowType};
+use super::insts::{RegReconcileInfo, WasmJitControlFlowFrame, WasmJitControlFlowType};
 use super::regalloc::{Register, X86Register, X86RegisterAllocator, REG_LOCAL_BASE, REG_TEMP};
 use super::{JitLinearMemory, ValueType, WasmJitCompiler};
 use crate::jit::regalloc::REG_TEMP_FP;
@@ -28,6 +28,7 @@ pub struct X86JitCompiler<'a> {
     ///
     /// TODO: refactor this to be per function code generator
     pub(crate) reg_allocator: X86RegisterAllocator,
+    pub(crate) reg_reconcile_info: Vec<RegReconcileInfo>,
 
     /// the control flow stack for branching
     ///
@@ -116,6 +117,7 @@ impl<'a> X86JitCompiler<'a> {
         let mut compiler = Self {
             module,
             reg_allocator: X86RegisterAllocator::new(),
+            reg_reconcile_info: Vec::new(),
             control_flow_stack: VecDeque::new(),
             jit,
             brtable_nondefault_target_labels: HashMap::new(),
@@ -155,12 +157,16 @@ impl X86JitCompiler<'_> {
     fn compile_func(&mut self, fdecl: &FuncDecl) -> Result<()> {
         let func_index = self.module.borrow().get_func_index(fdecl).unwrap();
         let func_start = *self.func_labels.get(func_index).unwrap();
-        let func_end = self.jit.label();
         let stack_size = self.get_stack_size_in_byte(fdecl);
 
         // reset per function state
         self.reg_allocator.reset();
         self.control_flow_stack.clear();
+        self.reg_reconcile_info.clear();
+
+        let end_labels = self.pregen_labals_for_ends(fdecl.get_insts());
+        let else_labels = self.pregen_labels_for_else(fdecl.get_insts());
+        let func_end = *end_labels.get(&(fdecl.get_insts().len() - 1)).unwrap();
         self.push_initial_control_frame(fdecl, func_start, func_end);
 
         // start compilation
@@ -172,6 +178,8 @@ impl X86JitCompiler<'_> {
             fdecl.get_insts(),
             &local_types,
             stack_size,
+            else_labels,
+            end_labels,
         )?;
 
         // emit return, epilogue embedded
@@ -475,5 +483,25 @@ impl X86JitCompiler<'_> {
             brtable_nondefault_target_addrs.insert(*func_index, nondefault_target_addrs);
         }
         self.brtable_nondefault_target_addrs = brtable_nondefault_target_addrs;
+    }
+
+    fn pregen_labals_for_ends(&mut self, insts: &[Instruction]) -> HashMap<usize, DestLabel> {
+        let mut end_labals = HashMap::new();
+        for (i, inst) in insts.iter().enumerate() {
+            if let Instruction::End = inst {
+                end_labals.insert(i, self.jit.label());
+            }
+        }
+        end_labals
+    }
+
+    fn pregen_labels_for_else(&mut self, insts: &[Instruction]) -> HashMap<usize, DestLabel> {
+        let mut else_labels = HashMap::new();
+        for (i, inst) in insts.iter().enumerate() {
+            if let Instruction::Else = inst {
+                else_labels.insert(i, self.jit.label());
+            }
+        }
+        else_labels
     }
 }
