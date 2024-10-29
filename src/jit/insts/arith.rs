@@ -479,51 +479,73 @@ impl X86JitCompiler<'_> {
             }
             I32Binop::DivS | I32Binop::RemS => {
                 let trap_label = self.trap_label;
-                let ok_label = self.jit.label();
+                let no_overflow = self.jit.label();
+                let ret_zero = self.jit.label();
+                let end = self.jit.label();
+                let overflow = match binop {
+                    I32Binop::DivS => trap_label,
+                    I32Binop::RemS => ret_zero,
+                    _ => unreachable!(),
+                };
+
                 monoasm!(
                     &mut self.jit,
-                    // div by zero check
-                    testq R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index());
+                    // Division by zero check
+                    testq R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index()); // Check if divisor is zero
                     jz trap_label;
-                    pushq R(X86Register::Rax.as_index());
-                    pushq R(X86Register::Rdx.as_index());
+
+                    // Save RAX and RDX
+                    pushq rax;
+                    pushq rdx;
+
+                    // Overflow check for i32::MIN / -1
+                    movq rax, (i32::MIN as u64);      // Load i32::MIN into RAX
+                    cmpq R(REG_TEMP.as_index()), rax; // Check if dividend is i32::MIN
+                    jne no_overflow;                  // If not, skip overflow check
+
+                    movq rax, (-1i64 as u64);           // Load -1 into RAX
+                    cmpq R(REG_TEMP2.as_index()), rax; // Check if divisor is -1
+                    jne no_overflow;                  // If not, skip overflow check
+
+                    // Overflow: jump to appropriate label (trap for DivS, return zero for RemS)
+                    jmp overflow;
+
+                no_overflow:
+                    // Perform the signed division
+                    xorl rdx, rdx;                    // Clear RDX for 32-bit division
+                    movl rax, R(REG_TEMP.as_index()); // Move 32-bit dividend into EAX
+                    cdq;                              // Sign-extend EAX into EDX:EAX for division
+                    idivl R(REG_TEMP2.as_index());    // Signed division (EAX = quotient, EDX = remainder)
+
+                    // Move the result (quotient for DivS, remainder for RemS) to REG_TEMP
                 );
 
-                // overflow check only need for div, rem does not need it....
-                if matches!(binop, I32Binop::DivS) {
-                    monoasm!(
-                        &mut self.jit,
-                        movq R(X86Register::Rax.as_index()), (i32::MIN as u64);
-                        cmpq R(REG_TEMP.as_index()), R(X86Register::Rax.as_index());
-                        jne ok_label;
-                        movq R(X86Register::Rax.as_index()), (0xFFFFFFFFFFFFFFFF);
-                        cmpq R(REG_TEMP2.as_index()), R(X86Register::Rax.as_index());
-                        jne ok_label;
-                        jmp trap_label;
-                    );
-                }
-
-                monoasm!(
-                    &mut self.jit,
-                ok_label:
-                    movq R(X86Register::Rax.as_index()), R(REG_TEMP.as_index());
-                    cqo; // RDX:RAX
-                    idiv R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
-                );
-
-                let src = if matches!(binop, I32Binop::DivS) {
-                    Register::Reg(X86Register::Rax)
-                } else {
-                    Register::Reg(X86Register::Rdx)
+                let src = match binop {
+                    I32Binop::DivS => Register::Reg(X86Register::Rax),
+                    I32Binop::RemS => Register::Reg(X86Register::Rdx),
+                    _ => unreachable!(),
                 };
                 emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), src);
 
+                // Jump to end after division
+                self.emit_jmp(end);
+
+                // Handle remainder overflow case (only for RemS)
                 monoasm!(
                     &mut self.jit,
-                    popq R(X86Register::Rdx.as_index());
-                    popq R(X86Register::Rax.as_index());
+                ret_zero:
+                    movl R(REG_TEMP.as_index()), 0; // Set REG_TEMP to zero for remainder overflow
+                );
+
+                // Restore RAX and RDX, then end
+                monoasm!(
+                    &mut self.jit,
+                end:
+                    popq rdx;
+                    popq rax;
                 );
             }
+
             I32Binop::DivU | I32Binop::RemU => {
                 let trap_label = self.trap_label;
                 let ok_label = self.jit.label();
@@ -557,8 +579,8 @@ impl X86JitCompiler<'_> {
 
                 monoasm!(
                     &mut self.jit,
-                    popq R(X86Register::Rdx.as_index());
-                    popq R(X86Register::Rax.as_index());
+                    popq rdx;
+                    popq rax;
                 );
             }
             I32Binop::And => {
