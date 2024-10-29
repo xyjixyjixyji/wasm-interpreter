@@ -128,7 +128,7 @@ impl X86JitCompiler<'_> {
                 if sign_extend {
                     monoasm!(
                         &mut self.jit,
-                        movsxl R(REG_TEMP2.as_index()), R(REG_TEMP.as_index());
+                        movsxl R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index());
                     );
                 }
             }

@@ -56,7 +56,12 @@ impl X86JitCompiler<'_> {
                     roundpd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP.as_index()), (0x00);
                 );
             }
-            F64Unop::Sqrt => todo!(),
+            F64Unop::Sqrt => {
+                monoasm!(
+                    &mut self.jit,
+                    sqrtsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP.as_index());
+                );
+            }
             F64Unop::I32TruncF64S => todo!(),
             F64Unop::I32TruncF64U => todo!(),
         }
@@ -89,7 +94,8 @@ impl X86JitCompiler<'_> {
                 );
                 let dst = self.reg_allocator.next();
                 emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
-                self.reg_allocator.push(dst);
+                self.reg_allocator
+                    .push(RegWithType::new(dst.reg, ValueType::I32));
                 return; // this returns a i32, so we return early
             }
             F64Binop::Ne => {
@@ -101,7 +107,8 @@ impl X86JitCompiler<'_> {
                 );
                 let dst = self.reg_allocator.next();
                 emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
-                self.reg_allocator.push(dst);
+                self.reg_allocator
+                    .push(RegWithType::new(dst.reg, ValueType::I32));
                 return; // this returns a i32, so we return early
             }
             F64Binop::Lt => {
@@ -113,7 +120,8 @@ impl X86JitCompiler<'_> {
                 );
                 let dst = self.reg_allocator.next();
                 emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
-                self.reg_allocator.push(dst);
+                self.reg_allocator
+                    .push(RegWithType::new(dst.reg, ValueType::I32));
                 return; // this returns a i32, so we return early
             }
             F64Binop::Gt => {
@@ -125,7 +133,8 @@ impl X86JitCompiler<'_> {
                 );
                 let dst = self.reg_allocator.next();
                 emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
-                self.reg_allocator.push(dst);
+                self.reg_allocator
+                    .push(RegWithType::new(dst.reg, ValueType::I32));
                 return; // this returns a i32, so we return early
             }
             F64Binop::Le => {
@@ -137,7 +146,8 @@ impl X86JitCompiler<'_> {
                 );
                 let dst = self.reg_allocator.next();
                 emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
-                self.reg_allocator.push(dst);
+                self.reg_allocator
+                    .push(RegWithType::new(dst.reg, ValueType::I32));
                 return; // this returns a i32, so we return early
             }
             F64Binop::Ge => {
@@ -149,7 +159,8 @@ impl X86JitCompiler<'_> {
                 );
                 let dst = self.reg_allocator.next();
                 emit_mov_reg_to_reg(&mut self.jit, dst.reg, Register::Reg(REG_TEMP));
-                self.reg_allocator.push(dst);
+                self.reg_allocator
+                    .push(RegWithType::new(dst.reg, ValueType::I32));
                 return; // this returns a i32, so we return early
             }
             F64Binop::Sub => {
@@ -193,15 +204,76 @@ impl X86JitCompiler<'_> {
         emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), a.reg);
 
         match unop {
-            I32Unop::Eqz => todo!(),
-            I32Unop::Clz => todo!(),
-            I32Unop::Ctz => todo!(),
-            I32Unop::Popcnt => todo!(),
-            I32Unop::Extend8S => todo!(),
-            I32Unop::Extend16S => todo!(),
-            I32Unop::F64ConvertI32S => todo!(),
-            I32Unop::F64ConvertI32U => todo!(),
+            I32Unop::Eqz => {
+                monoasm!(
+                    &mut self.jit,
+                    cmpq R(REG_TEMP.as_index()), (0);
+                    seteq R(REG_TEMP.as_index());
+                );
+            }
+            I32Unop::Clz => {
+                monoasm!(
+                    &mut self.jit,
+                    andq R(REG_TEMP.as_index()), (-1);
+                    lzcntl R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                );
+            }
+            I32Unop::Ctz => {
+                monoasm!(
+                    &mut self.jit,
+                    andq R(REG_TEMP.as_index()), (-1);
+                    tzcntl R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                );
+            }
+            I32Unop::Popcnt => {
+                monoasm!(
+                    &mut self.jit,
+                    andq R(REG_TEMP.as_index()), (-1);
+                    popcntl R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                );
+            }
+            // convert to i8 and sign extend it to 32bit
+            I32Unop::Extend8S => {
+                monoasm!(
+                    &mut self.jit,
+                    movq R(REG_TEMP2.as_index()), (0);
+                    movb R(REG_TEMP2.as_index()), R(REG_TEMP.as_index()); // contains lower 8 now
+                    movsxb R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // sign extend
+                );
+            }
+            I32Unop::Extend16S => {
+                monoasm!(
+                    &mut self.jit,
+                    movq R(REG_TEMP2.as_index()), (0);
+                    movw R(REG_TEMP2.as_index()), R(REG_TEMP.as_index()); // contains lower 16 now
+                    movsxw R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // sign extend
+                );
+            }
+            I32Unop::F64ConvertI32S => {
+                monoasm!(
+                    &mut self.jit,
+                    cvtsi2sdq xmm(REG_TEMP_FP.as_index()), R(REG_TEMP.as_index());
+                );
+                emit_mov_reg_to_reg(&mut self.jit, a.reg, Register::FpReg(REG_TEMP_FP));
+                self.reg_allocator
+                    .push(RegWithType::new(a.reg, ValueType::F64));
+                return;
+            }
+            I32Unop::F64ConvertI32U => {
+                monoasm!(
+                    &mut self.jit,
+                    movl R(REG_TEMP2.as_index()), R(REG_TEMP.as_index());
+                    cvtsi2sdq xmm(REG_TEMP_FP.as_index()), R(REG_TEMP2.as_index());
+                );
+                emit_mov_reg_to_reg(&mut self.jit, a.reg, Register::FpReg(REG_TEMP_FP));
+                self.reg_allocator
+                    .push(RegWithType::new(a.reg, ValueType::F64));
+                return;
+            }
         }
+
+        emit_mov_reg_to_reg(&mut self.jit, a.reg, Register::Reg(REG_TEMP));
+        self.reg_allocator.push(a);
     }
 
     pub(crate) fn emit_i32_binop(&mut self, binop: &I32Binop) {
