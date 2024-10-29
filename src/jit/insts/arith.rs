@@ -511,19 +511,12 @@ impl X86JitCompiler<'_> {
                     idiv R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
                 );
 
-                if matches!(binop, I32Binop::DivS) {
-                    emit_mov_reg_to_reg(
-                        &mut self.jit,
-                        Register::Reg(REG_TEMP),
-                        Register::Reg(X86Register::Rax),
-                    );
+                let src = if matches!(binop, I32Binop::DivS) {
+                    Register::Reg(X86Register::Rax)
                 } else {
-                    emit_mov_reg_to_reg(
-                        &mut self.jit,
-                        Register::Reg(REG_TEMP),
-                        Register::Reg(X86Register::Rdx),
-                    );
-                }
+                    Register::Reg(X86Register::Rdx)
+                };
+                emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), src);
 
                 monoasm!(
                     &mut self.jit,
@@ -554,19 +547,14 @@ impl X86JitCompiler<'_> {
                     // Perform the unsigned 32-bit division
                     divl R(REG_TEMP2.as_index()); // EAX: quotient, EDX: remainder
                 );
-                if matches!(binop, I32Binop::DivU) {
-                    emit_mov_reg_to_reg(
-                        &mut self.jit,
-                        Register::Reg(REG_TEMP),
-                        Register::Reg(X86Register::Rax),
-                    );
+
+                let src = if matches!(binop, I32Binop::DivU) {
+                    Register::Reg(X86Register::Rax)
                 } else {
-                    emit_mov_reg_to_reg(
-                        &mut self.jit,
-                        Register::Reg(REG_TEMP),
-                        Register::Reg(X86Register::Rdx),
-                    );
-                }
+                    Register::Reg(X86Register::Rdx)
+                };
+                emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), src);
+
                 monoasm!(
                     &mut self.jit,
                     popq R(X86Register::Rdx.as_index());
