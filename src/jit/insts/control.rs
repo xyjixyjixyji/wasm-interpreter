@@ -455,7 +455,7 @@ impl X86JitCompiler<'_> {
                 Register::Stack(o) => {
                     monoasm!(
                         &mut self.jit,
-                        movq R(REG_TEMP.as_index()), [rsp + (*o)];
+                        movq R(REG_TEMP.as_index()), [rbp - (*o)];
                         pushq R(REG_TEMP.as_index());
                     );
                 }

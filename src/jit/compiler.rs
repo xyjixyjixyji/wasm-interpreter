@@ -343,8 +343,8 @@ impl X86JitCompiler<'_> {
                     Register::Stack(o) => {
                         monoasm!(
                             &mut self.jit,
-                            movq R(REG_LOCAL_BASE.as_index()), rsp;
-                            addq R(REG_LOCAL_BASE.as_index()), (o);
+                            movq R(REG_LOCAL_BASE.as_index()), rbp;
+                            subq R(REG_LOCAL_BASE.as_index()), (o);
                         );
                     }
                     _ => unreachable!("locals are all spilled"),
@@ -369,7 +369,7 @@ impl X86JitCompiler<'_> {
                     ValType::I32 => {
                         monoasm!(
                             &mut self.jit,
-                            movq R(REG_TEMP.as_index()), [rbp + ((i as i32 - 6) * 8 + 8)];
+                            movq R(REG_TEMP.as_index()), [rbp + ((i as i32 - 6) * 8 + 16)];
                         );
                         emit_mov_reg_to_reg(&mut self.jit, r.reg, Register::Reg(REG_TEMP));
                         local_types.push(ValueType::I32);
@@ -377,7 +377,7 @@ impl X86JitCompiler<'_> {
                     ValType::F64 => {
                         monoasm!(
                             &mut self.jit,
-                            movsd xmm(REG_TEMP_FP.as_index()), [rbp + ((i as i32 - 6) * 8 + 8)];
+                            movsd xmm(REG_TEMP_FP.as_index()), [rbp + ((i as i32 - 6) * 8 + 16)];
                         );
                         emit_mov_reg_to_reg(&mut self.jit, r.reg, Register::FpReg(REG_TEMP_FP));
                         local_types.push(ValueType::F64);
@@ -396,8 +396,8 @@ impl X86JitCompiler<'_> {
                     Register::Stack(o) => {
                         monoasm!(
                             &mut self.jit,
-                            movq R(REG_LOCAL_BASE.as_index()), rsp;
-                            addq R(REG_LOCAL_BASE.as_index()), (o);
+                            movq R(REG_LOCAL_BASE.as_index()), rbp;
+                            subq R(REG_LOCAL_BASE.as_index()), (o);
                         );
                     }
                     _ => unreachable!(),

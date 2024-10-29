@@ -23,7 +23,7 @@ impl X86JitCompiler<'_> {
                 monoasm!(
                     &mut self.jit,
                     movq R(REG_TEMP.as_index()), R(REG_LOCAL_BASE.as_index()); // reg_temp = reg_local_base
-                    movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index()) + (offset)];
+                    movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index()) - (offset)];
                 );
                 emit_mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
             }
@@ -31,7 +31,7 @@ impl X86JitCompiler<'_> {
                 monoasm!(
                     &mut self.jit,
                     movq R(REG_TEMP.as_index()), R(REG_LOCAL_BASE.as_index()); // reg_temp = reg_local_base
-                    movq xmm(REG_TEMP_FP.as_index()), [R(REG_TEMP.as_index()) + (offset)];
+                    movq xmm(REG_TEMP_FP.as_index()), [R(REG_TEMP.as_index()) - (offset)];
                 );
                 emit_mov_reg_to_reg(&mut self.jit, dst, Register::FpReg(REG_TEMP_FP));
             }
@@ -45,14 +45,14 @@ impl X86JitCompiler<'_> {
                 emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), value);
                 monoasm!(
                     &mut self.jit,
-                    movq [R(REG_LOCAL_BASE.as_index()) + (offset)], R(REG_TEMP2.as_index());
+                    movq [R(REG_LOCAL_BASE.as_index()) - (offset)], R(REG_TEMP2.as_index());
                 );
             }
             ValueType::F64 => {
                 emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), value);
                 monoasm!(
                     &mut self.jit,
-                    movsd [R(REG_LOCAL_BASE.as_index()) + (offset)], xmm(REG_TEMP_FP.as_index());
+                    movsd [R(REG_LOCAL_BASE.as_index()) - (offset)], xmm(REG_TEMP_FP.as_index());
                 );
             }
         }
@@ -65,14 +65,14 @@ impl X86JitCompiler<'_> {
                 emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP2), top_of_stack);
                 monoasm!(
                     &mut self.jit,
-                    movq [R(REG_LOCAL_BASE.as_index()) + (offset)], R(REG_TEMP2.as_index());
+                    movq [R(REG_LOCAL_BASE.as_index()) - (offset)], R(REG_TEMP2.as_index());
                 );
             }
             ValueType::F64 => {
                 emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), top_of_stack);
                 monoasm!(
                     &mut self.jit,
-                    movsd [R(REG_LOCAL_BASE.as_index()) + (offset)], xmm(REG_TEMP_FP.as_index());
+                    movsd [R(REG_LOCAL_BASE.as_index()) - (offset)], xmm(REG_TEMP_FP.as_index());
                 );
             }
         }

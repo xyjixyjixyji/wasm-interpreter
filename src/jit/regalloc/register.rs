@@ -126,7 +126,7 @@ pub const FP_ALLOC_POOL: [X86FpRegister; 14] = [
 pub enum Register {
     Reg(X86Register),
     FpReg(X86FpRegister),
-    Stack(usize), // offset from Rsp
+    Stack(usize), // offset from Rbp
 }
 
 impl Register {
@@ -166,7 +166,7 @@ impl std::fmt::Display for Register {
         match self {
             Register::Reg(r) => write!(f, "R{}", r.as_index()),
             Register::FpReg(r) => write!(f, "xmm{}", r.as_index()),
-            Register::Stack(offset) => write!(f, "[%rsp + {}]", offset),
+            Register::Stack(offset) => write!(f, "[%rbp - {}]", offset),
         }
     }
 }

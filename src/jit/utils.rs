@@ -18,20 +18,20 @@ pub(crate) fn emit_mov_reg_to_reg(jit: &mut JitMemory, dst: Register, src: Regis
         (Register::Stack(o_dst), Register::Stack(o_src)) => {
             monoasm!(
                 &mut *jit,
-                movq R(REG_TEMP.as_index()), [rsp + (o_src)];
-                movq [rsp + (o_dst)], R(REG_TEMP.as_index());
+                movq R(REG_TEMP.as_index()), [rbp - (o_src)];
+                movq [rbp - (o_dst)], R(REG_TEMP.as_index());
             );
         }
         (Register::Reg(r_dst), Register::Stack(o_src)) => {
             monoasm!(
                 &mut *jit,
-                movq R(r_dst.as_index()), [rsp + (o_src)];
+                movq R(r_dst.as_index()), [rbp - (o_src)];
             );
         }
         (Register::FpReg(fpr_dst), Register::Stack(o_src)) => {
             monoasm!(
                 &mut *jit,
-                movq xmm(fpr_dst.as_index()), [rsp + (o_src)];
+                movq xmm(fpr_dst.as_index()), [rbp - (o_src)];
             );
         }
         (Register::Reg(r_dst), Register::Reg(r_src)) => {
@@ -61,13 +61,13 @@ pub(crate) fn emit_mov_reg_to_reg(jit: &mut JitMemory, dst: Register, src: Regis
         (Register::Stack(o_dst), Register::Reg(r_src)) => {
             monoasm!(
                 &mut *jit,
-                movq [rsp + (o_dst)], R(r_src.as_index());
+                movq [rbp - (o_dst)], R(r_src.as_index());
             );
         }
         (Register::Stack(o_dst), Register::FpReg(fpr_src)) => {
             monoasm!(
                 &mut *jit,
-                movq [rsp + (o_dst)], xmm(fpr_src.as_index());
+                movq [rbp - (o_dst)], xmm(fpr_src.as_index());
             );
         }
     }
@@ -92,7 +92,7 @@ impl X86JitCompiler<'_> {
             Register::Stack(offset) => {
                 monoasm!(
                     &mut self.jit,
-                    movq [rsp + (offset)], (value);
+                    movq [rbp - (offset)], (value);
                 );
             }
         }

@@ -1,4 +1,4 @@
-use monoasm::{DestLabel, Disp, Imm, JitMemory, Reg, Rm, Scale};
+use monoasm::{Disp, Imm, JitMemory, Reg, Rm, Scale};
 use monoasm_macro::monoasm;
 
 use crate::{
