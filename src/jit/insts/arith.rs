@@ -62,8 +62,101 @@ impl X86JitCompiler<'_> {
                     sqrtsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP.as_index());
                 );
             }
-            F64Unop::I32TruncF64S => todo!(),
-            F64Unop::I32TruncF64U => todo!(),
+            F64Unop::I32TruncF64S => {
+                monoasm!(
+                    &mut self.jit,
+                    roundpd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP.as_index()), (0x03); // trunc
+                );
+
+                // bound check
+                let trap_label = self.trap_label;
+                self.emit_mov_rawvalue_to_reg(
+                    (i32::MIN as f64).to_bits(),
+                    Register::FpReg(REG_TEMP_FP2),
+                );
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    jb trap_label;
+                );
+                self.emit_mov_rawvalue_to_reg(
+                    (i32::MAX as f64).to_bits(),
+                    Register::FpReg(REG_TEMP_FP2),
+                );
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    ja trap_label;
+                );
+
+                // convert to i32
+                monoasm!(
+                    &mut self.jit,
+                    cvttsd2siq R(REG_TEMP.as_index()), xmm(REG_TEMP_FP.as_index());
+                );
+                emit_mov_reg_to_reg(&mut self.jit, a, Register::Reg(REG_TEMP));
+                self.reg_allocator.push(RegWithType::new(a, ValueType::I32));
+                return;
+            }
+            F64Unop::I32TruncF64U => {
+                monoasm!(
+                    &mut self.jit,
+                    roundpd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP.as_index()), (0x03); // trunc
+                );
+
+                // bound check
+                let trap_label = self.trap_label;
+                self.emit_mov_rawvalue_to_reg((0 as f64).to_bits(), Register::FpReg(REG_TEMP_FP2));
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    jb trap_label;
+                );
+                self.emit_mov_rawvalue_to_reg(
+                    (u32::MAX as f64).to_bits(),
+                    Register::FpReg(REG_TEMP_FP2),
+                );
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    ja trap_label;
+                );
+
+                // convert to u32, we check if it is larger than i32::MAX first.....
+                // if so, we subtract i32.MAX from it and add 2^31 to the result
+                let beq_i32_max = self.jit.label();
+                let end = self.jit.label();
+                self.emit_mov_rawvalue_to_reg(
+                    (i32::MAX as f64).to_bits(),
+                    Register::FpReg(REG_TEMP_FP2),
+                );
+
+                monoasm!(
+                    &mut self.jit,
+                    ucomisd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    jbe beq_i32_max;
+                );
+                self.emit_mov_rawvalue_to_reg(
+                    ((1u64 << 31) as f64).to_bits(),
+                    Register::FpReg(REG_TEMP_FP2),
+                );
+                monoasm!(
+                    &mut self.jit,
+                    subsd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                    cvttsd2siq R(REG_TEMP.as_index()), xmm(REG_TEMP_FP.as_index());
+                    movq R(REG_TEMP2.as_index()), (1u64 << 31);
+                    addq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index());
+                    jmp end;
+
+                beq_i32_max:
+                    cvttsd2siq R(REG_TEMP.as_index()), xmm(REG_TEMP_FP.as_index());
+                end:
+                );
+
+                emit_mov_reg_to_reg(&mut self.jit, a, Register::Reg(REG_TEMP));
+                self.reg_allocator.push(RegWithType::new(a, ValueType::I32));
+                return;
+            }
         }
 
         emit_mov_reg_to_reg(&mut self.jit, a, Register::FpReg(REG_TEMP_FP));
@@ -207,7 +300,9 @@ impl X86JitCompiler<'_> {
             I32Unop::Eqz => {
                 monoasm!(
                     &mut self.jit,
-                    cmpq R(REG_TEMP.as_index()), (0);
+                    movl R(REG_TEMP2.as_index()), R(REG_TEMP.as_index());
+                    movq R(REG_TEMP.as_index()), (0);
+                    cmpq R(REG_TEMP2.as_index()), (0);
                     seteq R(REG_TEMP.as_index());
                 );
             }

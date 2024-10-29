@@ -69,7 +69,6 @@ impl X86JitCompiler<'_> {
                 }
                 Instruction::End => {
                     self.control_flow_stack.pop_back().unwrap();
-                    log::debug!("i: {}, end label: {:?}", i, end_labels);
                     let end_label = *end_labels.get(&i).unwrap();
 
                     self.emit_jmp(end_label);
