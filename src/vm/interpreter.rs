@@ -78,7 +78,12 @@ impl WasmInterpreter<'_> {
             }
             wasmparser::ValType::F64 => {
                 let f: ReturnFunc = unsafe { std::mem::transmute(vm_entry) };
-                WasmValue::F64(f64::from_bits(f())).to_string()
+                let fval = f64::from_bits(f());
+
+                // i think this is compiler optimization problem, if we do not
+                // do this, the result precision is ignored
+                let _ = format!("{:.6}", fval);
+                format!("{:.6}", fval)
             }
             _ => unimplemented!(),
         };
