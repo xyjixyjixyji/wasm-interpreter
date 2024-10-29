@@ -485,23 +485,32 @@ impl X86JitCompiler<'_> {
                     // div by zero check
                     testq R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index());
                     jz trap_label;
-
-                    // overflow check
                     pushq R(X86Register::Rax.as_index());
                     pushq R(X86Register::Rdx.as_index());
-                    movq R(X86Register::Rax.as_index()), (0xFFFFFFFF80000000);
-                    cmpq R(REG_TEMP.as_index()), R(X86Register::Rax.as_index());
-                    jne ok_label;
-                    movq R(X86Register::Rax.as_index()), (0xFFFFFFFFFFFFFFFF);
-                    cmpq R(REG_TEMP2.as_index()), R(X86Register::Rax.as_index());
-                    jne ok_label;
-                    jmp trap_label;
+                );
 
+                // overflow check only need for div, rem does not need it....
+                if matches!(binop, I32Binop::DivS) {
+                    monoasm!(
+                        &mut self.jit,
+                        movq R(X86Register::Rax.as_index()), (i32::MIN as u64);
+                        cmpq R(REG_TEMP.as_index()), R(X86Register::Rax.as_index());
+                        jne ok_label;
+                        movq R(X86Register::Rax.as_index()), (0xFFFFFFFFFFFFFFFF);
+                        cmpq R(REG_TEMP2.as_index()), R(X86Register::Rax.as_index());
+                        jne ok_label;
+                        jmp trap_label;
+                    );
+                }
+
+                monoasm!(
+                    &mut self.jit,
                 ok_label:
                     movq R(X86Register::Rax.as_index()), R(REG_TEMP.as_index());
                     cqo; // RDX:RAX
                     idiv R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
                 );
+
                 if matches!(binop, I32Binop::DivS) {
                     emit_mov_reg_to_reg(
                         &mut self.jit,
@@ -515,6 +524,7 @@ impl X86JitCompiler<'_> {
                         Register::Reg(X86Register::Rdx),
                     );
                 }
+
                 monoasm!(
                     &mut self.jit,
                     popq R(X86Register::Rdx.as_index());
@@ -526,22 +536,23 @@ impl X86JitCompiler<'_> {
                 let ok_label = self.jit.label();
                 monoasm!(
                     &mut self.jit,
-                    // div by zero check
-                    testq R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index());
+                    // Div by zero check
+                    testq R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index()); // Check if divisor is zero
                     jz trap_label;
 
+                    // Label for successful division path
                 ok_label:
-                    pushq R(X86Register::Rax.as_index());
-                    pushq R(X86Register::Rdx.as_index());
+                    pushq rax;
+                    pushq rdx;
 
-                    // Clear RDX (for unsigned division, RDX should be 0)
-                    xorq R(X86Register::Rdx.as_index()), R(X86Register::Rdx.as_index());
+                    // Clear EDX (for 32-bit unsigned division, EDX should be 0)
+                    xorl rdx, rdx;
 
-                    // Move dividend into RAX
-                    movq R(X86Register::Rax.as_index()), R(REG_TEMP.as_index());
+                    // Move lower 32 bits of dividend into EAX
+                    movl rax, R(REG_TEMP.as_index());
 
-                    // Perform the unsigned division
-                    div R(REG_TEMP2.as_index()); // RAX: quotient, RDX: remainder
+                    // Perform the unsigned 32-bit division
+                    divl R(REG_TEMP2.as_index()); // EAX: quotient, EDX: remainder
                 );
                 if matches!(binop, I32Binop::DivU) {
                     emit_mov_reg_to_reg(
