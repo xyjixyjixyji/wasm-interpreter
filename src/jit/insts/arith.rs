@@ -18,16 +18,51 @@ impl X86JitCompiler<'_> {
         emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), a);
 
         match unop {
-            F64Unop::Abs => todo!(),
-            F64Unop::Neg => todo!(),
-            F64Unop::Ceil => todo!(),
-            F64Unop::Floor => todo!(),
-            F64Unop::Trunc => todo!(),
-            F64Unop::Nearest => todo!(),
+            F64Unop::Abs => {
+                self.emit_mov_rawvalue_to_reg(0x7fffffffffffffff, Register::FpReg(REG_TEMP_FP2));
+                monoasm!(
+                    &mut self.jit,
+                    andpd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                );
+            }
+            F64Unop::Neg => {
+                self.emit_mov_rawvalue_to_reg(0x8000000000000000, Register::FpReg(REG_TEMP_FP2));
+                monoasm!(
+                    &mut self.jit,
+                    xorpd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP2.as_index());
+                );
+            }
+            F64Unop::Ceil => {
+                monoasm!(
+                    &mut self.jit,
+                    roundpd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP.as_index()), (0x02);
+                );
+            }
+            F64Unop::Floor => {
+                monoasm!(
+                    &mut self.jit,
+                    roundpd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP.as_index()), (0x01);
+                );
+            }
+            F64Unop::Trunc => {
+                monoasm!(
+                    &mut self.jit,
+                    roundpd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP.as_index()), (0x03);
+                );
+            }
+            F64Unop::Nearest => {
+                monoasm!(
+                    &mut self.jit,
+                    roundpd xmm(REG_TEMP_FP.as_index()), xmm(REG_TEMP_FP.as_index()), (0x00);
+                );
+            }
             F64Unop::Sqrt => todo!(),
             F64Unop::I32TruncF64S => todo!(),
             F64Unop::I32TruncF64U => todo!(),
         }
+
+        emit_mov_reg_to_reg(&mut self.jit, a, Register::FpReg(REG_TEMP_FP));
+        self.reg_allocator.push(RegWithType::new(a, ValueType::F64));
     }
 
     // jit compile *a = a op b*
