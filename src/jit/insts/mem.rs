@@ -78,8 +78,8 @@ impl X86JitCompiler<'_> {
         }
     }
 
-    pub(crate) fn emit_memory_grow(&mut self, npages: Register) {
-        self.linear_mem.grow(&mut self.jit, npages);
+    pub(crate) fn emit_memory_grow(&mut self, dst: Register, npages: Register) {
+        self.linear_mem.grow(&mut self.jit, Some(dst), npages);
     }
 
     pub(crate) fn emit_load_mem(

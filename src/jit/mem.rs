@@ -1,4 +1,4 @@
-use monoasm::{Disp, Imm, JitMemory, Reg, Rm, Scale};
+use monoasm::{DestLabel, Disp, Imm, JitMemory, Reg, Rm, Scale};
 use monoasm_macro::monoasm;
 
 use crate::{
@@ -13,12 +13,14 @@ use super::regalloc::Register;
 
 pub struct JitLinearMemory {
     size_mem_in_page: Box<u64>,
+    mem_limit: u64,
 }
 
 impl JitLinearMemory {
-    pub fn new() -> Self {
+    pub fn new(mem_limit: u64) -> Self {
         Self {
             size_mem_in_page: Box::new(0),
+            mem_limit,
         }
     }
 
@@ -45,18 +47,38 @@ impl JitLinearMemory {
             movq R(REG_TEMP.as_index()), (npages);
         );
 
-        self.grow(jit, Register::Reg(REG_TEMP));
+        self.grow(jit, None, Register::Reg(REG_TEMP));
     }
 
-    pub fn grow(&mut self, jit: &mut JitMemory, npages: Register) {
+    /// Put the old size in dst and grow the memory
+    pub fn grow(&mut self, jit: &mut JitMemory, dst: Option<Register>, npages: Register) {
+        let invalid_npage = jit.label();
+        let end = jit.label();
+
         // get the old size
         emit_mov_reg_to_reg(jit, Register::Reg(REG_TEMP2), npages); // reg_temp2 = npages
+        monoasm!(
+            &mut *jit,
+            cmpq R(REG_TEMP2.as_index()), (0);
+            jlt invalid_npage;
+        );
+
         self.read_memory_size_in_page(jit, Register::Reg(REG_TEMP)); // reg_temp = old_size
+        if let Some(dst) = dst {
+            emit_mov_reg_to_reg(jit, dst, Register::Reg(REG_TEMP));
+        }
 
         // add the old size and npages
         monoasm!(
             &mut *jit,
             addq R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // reg_temp = new_size_in_pages
+        );
+
+        // if old_size + npages > mem_limit or npages < 0, return -1
+        monoasm!(
+            &mut *jit,
+            cmpq R(REG_TEMP.as_index()), (self.mem_limit);
+            jgt invalid_npage;
         );
 
         // store the new size to memory
@@ -91,6 +113,22 @@ impl JitLinearMemory {
             popq rdx;
             popq rsi;
             popq rdi;
+
+            jmp end;
+        );
+
+        // invalid input, store -1 to dst
+        monoasm!(
+            &mut *jit,
+        invalid_npage:
+            movq R(REG_TEMP.as_index()), (-1);
+        );
+        if let Some(dst) = dst {
+            emit_mov_reg_to_reg(jit, dst, Register::Reg(REG_TEMP));
+        }
+        monoasm!(
+            &mut *jit,
+            end:
         );
     }
 

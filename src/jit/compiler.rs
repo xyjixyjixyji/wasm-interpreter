@@ -113,6 +113,10 @@ impl<'a> X86JitCompiler<'a> {
             .iter()
             .map(|_| jit.label())
             .collect::<Vec<_>>();
+        let mem_limit = match module.borrow().get_memory() {
+            Some(mem) => mem.maximum.unwrap_or(mem.initial),
+            None => 0,
+        };
 
         let mut compiler = Self {
             module,
@@ -122,7 +126,7 @@ impl<'a> X86JitCompiler<'a> {
             jit,
             brtable_nondefault_target_labels: HashMap::new(),
             brtable_nondefault_target_addrs: HashMap::new(),
-            linear_mem: JitLinearMemory::new(),
+            linear_mem: JitLinearMemory::new(mem_limit),
             tables: vec![vec![]; ntables],
             table_len: vec![0; ntables],
             globals: vec![0; nglobals],

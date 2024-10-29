@@ -216,13 +216,11 @@ impl X86JitCompiler<'_> {
                     }
 
                     let additional_pages = self.reg_allocator.pop_noopt();
+
                     // use a spill register to avoid aliasing
-                    let old_mem_size = self.reg_allocator.new_spill(ValueType::I32);
+                    let dst = self.reg_allocator.new_spill(ValueType::I32);
 
-                    self.linear_mem
-                        .read_memory_size_in_page(&mut self.jit, old_mem_size.reg);
-
-                    self.emit_memory_grow(additional_pages.reg);
+                    self.emit_memory_grow(dst.reg, additional_pages.reg);
                 }
                 Instruction::F64Const { value } => {
                     let reg = self.reg_allocator.next_xmm();
