@@ -229,14 +229,10 @@ impl X86JitCompiler<'_> {
                     let reg = self.reg_allocator.next_xmm();
                     self.emit_mov_rawvalue_to_reg(value.to_bits(), reg.reg);
                 }
-                Instruction::I32Unop(_) => todo!(),
-                Instruction::I32Binop(binop) => {
-                    self.emit_i32_binop(binop);
-                }
-                Instruction::F64Unop(_) => todo!(),
-                Instruction::F64Binop(binop) => {
-                    self.emit_f64_binop(binop);
-                }
+                Instruction::I32Unop(unop) => self.emit_i32_unop(unop),
+                Instruction::I32Binop(binop) => self.emit_i32_binop(binop),
+                Instruction::F64Unop(unop) => self.emit_f64_unop(unop),
+                Instruction::F64Binop(binop) => self.emit_f64_binop(binop),
             }
         }
 

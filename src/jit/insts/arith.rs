@@ -6,13 +6,30 @@ use crate::{
         utils::emit_mov_reg_to_reg,
         ValueType, X86JitCompiler,
     },
-    module::insts::{F64Binop, I32Binop},
+    module::insts::{F64Binop, F64Unop, I32Binop, I32Unop},
 };
 
 use monoasm::*;
 use monoasm_macro::monoasm;
 
 impl X86JitCompiler<'_> {
+    pub(crate) fn emit_f64_unop(&mut self, unop: &F64Unop) {
+        let a = self.reg_allocator.pop_noopt().reg;
+        emit_mov_reg_to_reg(&mut self.jit, Register::FpReg(REG_TEMP_FP), a);
+
+        match unop {
+            F64Unop::Abs => todo!(),
+            F64Unop::Neg => todo!(),
+            F64Unop::Ceil => todo!(),
+            F64Unop::Floor => todo!(),
+            F64Unop::Trunc => todo!(),
+            F64Unop::Nearest => todo!(),
+            F64Unop::Sqrt => todo!(),
+            F64Unop::I32TruncF64S => todo!(),
+            F64Unop::I32TruncF64U => todo!(),
+        }
+    }
+
     // jit compile *a = a op b*
     pub(crate) fn emit_f64_binop(&mut self, binop: &F64Binop) {
         let b = self.reg_allocator.pop_noopt().reg;
@@ -134,6 +151,22 @@ impl X86JitCompiler<'_> {
 
         emit_mov_reg_to_reg(&mut self.jit, a, Register::FpReg(REG_TEMP_FP));
         self.reg_allocator.push(RegWithType::new(a, ValueType::F64));
+    }
+
+    pub(crate) fn emit_i32_unop(&mut self, unop: &I32Unop) {
+        let a = self.reg_allocator.pop_noopt();
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), a.reg);
+
+        match unop {
+            I32Unop::Eqz => todo!(),
+            I32Unop::Clz => todo!(),
+            I32Unop::Ctz => todo!(),
+            I32Unop::Popcnt => todo!(),
+            I32Unop::Extend8S => todo!(),
+            I32Unop::Extend16S => todo!(),
+            I32Unop::F64ConvertI32S => todo!(),
+            I32Unop::F64ConvertI32U => todo!(),
+        }
     }
 
     pub(crate) fn emit_i32_binop(&mut self, binop: &I32Binop) {
