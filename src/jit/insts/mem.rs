@@ -90,61 +90,76 @@ impl X86JitCompiler<'_> {
         width: u32,
         sign_extend: bool,
     ) {
-        self.get_effective_address(REG_TEMP, base, offset); // REG_TEMP stores the effective address
+        // if base is negative, we need to trap
+        emit_mov_reg_to_reg(&mut self.jit, Register::Reg(REG_TEMP), base);
+        let trap_label = self.trap_label;
+        monoasm!(
+            &mut self.jit,
+            cmpq R(REG_TEMP.as_index()), (0);
+            jlt trap_label;
+        );
 
-        // 2. load the result into dst
+        // read the start memory address
+        self.get_effective_address(REG_TEMP, base, offset); // REG_TEMP stores the effective address
         monoasm!(
             &mut self.jit,
             addq R(REG_TEMP.as_index()), R(REG_MEMORY_BASE.as_index()); // <-- reg_temp = reg_memory_base + effective_addr
         );
 
+        // clear the temp2 register, it will store the result
+        monoasm!(
+            &mut self.jit,
+            xorq R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index());
+        );
+
+        // actual load
         match width {
             8 => {
                 monoasm!(
                     &mut self.jit,
-                    movq R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
+                    movq R(REG_TEMP2.as_index()), [R(REG_TEMP.as_index())];
                 );
             }
             4 => {
                 monoasm!(
                     &mut self.jit,
-                    movl R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
+                    movl R(REG_TEMP2.as_index()), [R(REG_TEMP.as_index())];
                 );
                 if sign_extend {
                     monoasm!(
                         &mut self.jit,
-                        movsxl R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                        movsxl R(REG_TEMP2.as_index()), R(REG_TEMP.as_index());
                     );
                 }
             }
             2 => {
                 monoasm!(
                     &mut self.jit,
-                    movw R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
+                    movw R(REG_TEMP2.as_index()), [R(REG_TEMP.as_index())];
                 );
                 if sign_extend {
                     monoasm!(
                         &mut self.jit,
-                        movsxw R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                        movsxw R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index());
                     );
                 }
             }
             1 => {
                 monoasm!(
                     &mut self.jit,
-                    movb R(REG_TEMP.as_index()), [R(REG_TEMP.as_index())];
+                    movb R(REG_TEMP2.as_index()), [R(REG_TEMP.as_index())];
                 );
                 if sign_extend {
                     monoasm!(
                         &mut self.jit,
-                        movsxb R(REG_TEMP.as_index()), R(REG_TEMP.as_index());
+                        movsxb R(REG_TEMP2.as_index()), R(REG_TEMP2.as_index());
                     );
                 }
             }
             _ => unreachable!("invalid width: {}", width),
         }
 
-        emit_mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP));
+        emit_mov_reg_to_reg(&mut self.jit, dst, Register::Reg(REG_TEMP2));
     }
 
     pub(crate) fn emit_store_mem(

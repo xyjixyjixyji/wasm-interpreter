@@ -383,7 +383,9 @@ impl X86JitCompiler<'_> {
                     pushq rcx;
                     movb rcx, R(REG_TEMP2.as_index());
                     andb cl, (0x1F);
-                    rolq R(REG_TEMP.as_index()), cl; // a = a << b
+                    movl R(REG_TEMP2.as_index()), R(REG_TEMP.as_index()); // clear upper bits
+                    roll R(REG_TEMP2.as_index()), cl; // a = a << b
+                    movl R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // ugly workaround for rotation
                     popq rcx;
                 );
             }
@@ -392,7 +394,10 @@ impl X86JitCompiler<'_> {
                     &mut self.jit,
                     pushq rcx;
                     movq rcx, R(REG_TEMP2.as_index());
-                    rorq R(REG_TEMP.as_index()), cl; // a = a >> b
+                    andb cl, (0x1F);
+                    movl R(REG_TEMP2.as_index()), R(REG_TEMP.as_index()); // clear upper bits
+                    rorl R(REG_TEMP2.as_index()), cl; // a = a >> b
+                    movl R(REG_TEMP.as_index()), R(REG_TEMP2.as_index()); // ugly workaround for rotation
                     popq rcx;
                 );
             }
