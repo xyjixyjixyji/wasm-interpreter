@@ -1,8 +1,13 @@
 #!/bin/bash
 
+SCRIPT_DIR=$(dirname $(realpath ${BASH_SOURCE}))
+TEST_DIR=$SCRIPT_DIR/tests
+WASM_VM_PATH=${1:-$SCRIPT_DIR/wasm-vm}
+
 # Directories
-wasm_dir="tests/wasm"
-expect_dir="tests/expect"
+wasm_dir="$TEST_DIR/wasm"
+expect_dir="$TEST_DIR/expect"
+
 
 # Function to run a wasm file with wasmtime and get stdout and stderr
 function run_wasm {
@@ -10,10 +15,10 @@ function run_wasm {
     shift
     local run_args=$@
     if [ -z "$run_args" ]; then
-      local output=$(timeout 5 ./wasm-vm --jit "$wasm_file" 2>&1)
-    else
-      local output=$(timeout 5 ./wasm-vm --jit -a $run_args "$wasm_file" 2>&1)
-    fi
+       local output=$(timeout 5 $WASM_VM_PATH --jit "$wasm_file" 2>&1)
+     else
+       local output=$(timeout 5 $WASM_VM_PATH --jit -a $run_args "$wasm_file" 2>&1)
+     fi
     if [ $? -ne 0 ]; then
       echo "timeout"
     else
@@ -64,7 +69,7 @@ for wasm_file in "$wasm_dir"/*.wasm; do
     echo "#### Test $((num_tests+1)) ####"
     if [ -f "$expect_file" ]; then
         expected_output=$(cat "$expect_file")
-        check_output $wasm_file $expected_output
+        check_output $wasm_file "$expected_output"
         if [ $? -eq 0 ]; then
           ((pass++))
         fi
@@ -92,8 +97,9 @@ for wasm_file in "$wasm_dir"/*.wasm; do
 done
 
 fail=$((num_tests-pass))
+prop10=$(echo "scale=3; ($pass/$num_tests)*10" | bc)
 echo ""
-echo "============== SUMMARY =============="
-printf '# Tests: %d | Pass: %d; Fail: %d\n' $num_tests $pass $fail
-echo "====================================="
+echo "==================== SUMMARY ===================="
+printf '# Tests: %d | Pass: %d; Fail: %d | Score: %f\n' $num_tests $pass $fail $prop10
+echo "================================================="
 exit $fail
